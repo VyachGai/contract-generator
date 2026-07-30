@@ -412,3 +412,6 @@ button:focus-visible, input:focus-visible, .dropzone:focus-within {
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }
 }
+
+/* Табуляция из .docx в предпросмотре */
+.preview__paper .docx-tab { display: inline-block; width: 2em; }

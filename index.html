@@ -215,15 +215,17 @@
   </div>
 </footer>
 
-<!-- Внешние библиотеки (CDN). Для офлайн-развёртывания скачайте их в /lib и поменяйте пути. -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pizzip/3.1.7/pizzip.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pizzip/3.1.7/pizzip-utils.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/docxtemplater/3.50.0/docxtemplater.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.8.0/mammoth.browser.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<!-- Библиотеки лежат рядом, в /lib: приложение не зависит от внешних сайтов
+     и работает без интернета. Версии: pizzip 3.1.7, docxtemplater 3.50.0,
+     FileSaver 2.0.5, pdf.js 3.11.174. -->
+<script src="lib/pizzip.min.js"></script>
+<script src="lib/pizzip-utils.min.js"></script>
+<script src="lib/docxtemplater.js"></script>
+<script src="lib/FileSaver.min.js"></script>
+<script src="lib/pdf.min.js"></script>
 
 <!-- Наши модули -->
+<script src="js/docx-view.js"></script>
 <script src="js/declension-rules.js"></script>
 <script src="js/declension.js"></script>
 <script src="js/parser.js"></script>

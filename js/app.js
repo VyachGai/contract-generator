@@ -33,8 +33,7 @@
     setDefaultDate();
     // Настройка pdf.js worker
     if (window.pdfjsLib) {
-      pdfjsLib.GlobalWorkerOptions.workerSrc =
-        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'lib/pdf.worker.min.js';
     }
   });
 
@@ -106,9 +105,11 @@
       reader.readAsText(file, 'utf-8');
     } else if (name.endsWith('.docx')) {
       reader.onload = function () {
-        window.mammoth.extractRawText({ arrayBuffer: reader.result })
-          .then(function (res) { applyParsed(res.value, file.name); })
-          .catch(function (err) { setStatus('Не удалось прочитать .docx: ' + err.message, 'err'); });
+        try {
+          applyParsed(window.DocxView.toText(window.DocxView.fromBuffer(reader.result)), file.name);
+        } catch (err) {
+          setStatus('Не удалось прочитать .docx: ' + err.message, 'err');
+        }
       };
       reader.readAsArrayBuffer(file);
     } else if (name.endsWith('.pdf')) {
@@ -407,12 +408,13 @@
     $('btnPdf').addEventListener('click', function () {
       if (!lastRender) return;
       genStatus('Готовлю PDF…');
-      var blob = docToBlob(lastRender.doc);
-      docxBlobToPdf(blob, makeFileName(lastRender.v, 'pdf')).then(function () {
+      try {
+        printAsPdf(window.DocxView.toHtml(lastRender.doc.getZip()),
+          makeFileName(lastRender.v, 'pdf'));
         genStatus('Окно печати PDF открыто', 'ok');
-      }).catch(function (err) {
+      } catch (err) {
         genStatus('Ошибка PDF: ' + describeError(err), 'err');
-      });
+      }
     });
 
     $('btnClear').addEventListener('click', function () {
@@ -460,14 +462,11 @@
 
     renderDoc().then(function (rendered) {
       lastRender = rendered;
-      var blob = docToBlob(rendered.doc);
       $('previewSub').textContent = 'Договор: ' + CONTRACTS[state.type].title +
         (rendered.v.doc_number ? ' · № ' + rendered.v.doc_number : '') + '. Проверьте и скачайте.';
-      return blob.arrayBuffer();
-    }).then(function (buf) {
-      return window.mammoth.convertToHtml({ arrayBuffer: buf });
-    }).then(function (res) {
-      paper.innerHTML = res.value;
+      // Готовый документ уже распакован в памяти — читаем его напрямую,
+      // без повторной сборки в blob и обратной распаковки.
+      paper.innerHTML = window.DocxView.toHtml(rendered.doc.getZip());
     }).catch(function (err) {
       if (err.message === 'validation') {
         $('previewSection').hidden = true;
@@ -491,21 +490,16 @@
   // печать через окно предпросмотра: открываем HTML-представление и вызываем печать
   // в PDF. Для точного соответствия рекомендуем .docx + «Сохранить как PDF» в Word.
   // ---------------------------------------------------------------------------
-  function docxBlobToPdf(docxBlob, pdfName) {
-    // Конвертируем docx -> HTML через mammoth, печатаем в PDF средствами браузера.
-    return docxBlob.arrayBuffer().then(function (buf) {
-      return window.mammoth.convertToHtml({ arrayBuffer: buf });
-    }).then(function (res) {
-      var win = window.open('', '_blank');
-      if (!win) throw new Error('браузер заблокировал окно печати — разрешите всплывающие окна');
-      win.document.write(
-        '<!DOCTYPE html><html lang="ru"><head><meta charset="utf-8"><title>' + pdfName + '</title>' +
-        '<style>@page{size:A4;margin:18mm 16mm}body{font-family:"Times New Roman",serif;font-size:12pt;line-height:1.35;color:#000}' +
-        'table{border-collapse:collapse;width:100%}td,th{border:1px solid #000;padding:4px 6px;vertical-align:top}' +
-        'p{margin:.3em 0}</style></head><body>' + res.value +
-        '<script>window.onload=function(){window.print();}<\/script></body></html>'
-      );
-      win.document.close();
-    });
+  function printAsPdf(html, pdfName) {
+    var win = window.open('', '_blank');
+    if (!win) throw new Error('браузер заблокировал окно печати — разрешите всплывающие окна');
+    win.document.write(
+      '<!DOCTYPE html><html lang="ru"><head><meta charset="utf-8"><title>' + pdfName + '</title>' +
+      '<style>@page{size:A4;margin:18mm 16mm}body{font-family:"Times New Roman",serif;font-size:12pt;line-height:1.35;color:#000}' +
+      'table{border-collapse:collapse;width:100%}td,th{border:1px solid #000;padding:4px 6px;vertical-align:top}' +
+      'p{margin:.3em 0}.docx-tab{display:inline-block;width:2em}</style></head><body>' + html +
+      '<script>window.onload=function(){window.print();}<\/script></body></html>'
+    );
+    win.document.close();
   }
 })();
