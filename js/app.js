@@ -19,6 +19,9 @@
   ];
 
   var state = { type: 'teo' };
+  // Пока оператор сам не выбрал основание полномочий, подсказываем его
+  // по должности; после ручного выбора больше не перебиваем.
+  var basisTouched = false;
   var lastRender = null; // кэш последнего отрендеренного договора (для скачивания)
   var $ = function (id) { return document.getElementById(id); };
 
@@ -165,6 +168,7 @@
       }
     });
     updateDeclension();
+    suggestBasis();
     uncheckConfirm();
     hidePreview();
 
@@ -182,6 +186,25 @@
   // ---------------------------------------------------------------------------
   function initDeclensionPreview() {
     $('signatory_fio').addEventListener('input', updateDeclension);
+    $('signatory_basis').addEventListener('change', function () { basisTouched = true; });
+    $('signatory_role').addEventListener('input', suggestBasis);
+    $('name_full').addEventListener('input', suggestBasis);
+  }
+
+  function isIndividual() {
+    return /^\s*(индивидуальный предприниматель|ип\b)/i.test($('name_full').value) ||
+      /индивидуальный предприниматель/i.test($('signatory_role').value);
+  }
+
+  // По уставу действует только единоличный исполнительный орган — директор
+  // или генеральный директор. ИП — без основания. Все прочие подписанты
+  // (коммерческий директор, представитель, президент) — по доверенности;
+  // если это не так, оператор меняет выбор руками.
+  function suggestBasis() {
+    if (basisTouched) return;
+    var role = $('signatory_role').value.trim();
+    $('signatory_basis').value = isIndividual() ? ''
+      : (/^(генеральный\s+)?директор$/i.test(role) ? 'Устава' : 'доверенности');
   }
 
   function updateDeclension() {
@@ -208,6 +231,7 @@
     FIELD_IDS.forEach(function (id) { v[id] = $(id).value.trim(); });
     v.doc_number = $('doc_number').value.trim();
     v.doc_date = $('doc_date').value;
+    v.signatory_basis = $('signatory_basis').value;
 
     var P = window.Petrovich;
     var role = v.signatory_role || 'директора';
@@ -230,6 +254,12 @@
       // Род согласуется с клиентом: «ООО …, именуемое», «ИП Иванова …, именуемая»
       client_named: isIp ? (gender === 'female' ? 'именуемая' : 'именуемый') : 'именуемое',
       client_acting: gender === 'female' ? 'действующей' : 'действующего',
+      // Готовый оборот с ведущей запятой: «, действующего на основании Устава».
+      // Если основание не выбрано (ИП), оборот из договора исчезает целиком.
+      client_basis: v.signatory_basis
+        ? ', ' + (gender === 'female' ? 'действующей' : 'действующего') +
+          ' на основании ' + v.signatory_basis
+        : '',
       doc_number: v.doc_number || '____',
       doc_date: formatDocDate(v.doc_date),
       client_signatory_gen: fioGen || '________________________',
@@ -391,6 +421,7 @@
       var el = $(id);
       if (el) el.addEventListener('input', onDataChanged);
     });
+    $('signatory_basis').addEventListener('change', onDataChanged);
     // смена типа договора тоже сбрасывает
     document.getElementById('contractType').addEventListener('click', onDataChanged);
 
@@ -424,6 +455,8 @@
       });
       $('doc_number').value = '';
       setDefaultDate();
+      basisTouched = false;
+      suggestBasis();
       updateDeclension();
       $('parseStatus').hidden = true;
       uncheckConfirm();
@@ -497,7 +530,7 @@
       '<!DOCTYPE html><html lang="ru"><head><meta charset="utf-8"><title>' + pdfName + '</title>' +
       '<style>@page{size:A4;margin:18mm 16mm}body{font-family:"Times New Roman",serif;font-size:12pt;line-height:1.35;color:#000}' +
       'table{border-collapse:collapse;width:100%}td,th{border:1px solid #000;padding:4px 6px;vertical-align:top}' +
-      'p{margin:.3em 0}.docx-tab{display:inline-block;width:2em}</style></head><body>' + html +
+      'p{margin:.3em 0}.docx-tab{display:inline-block;width:2em}.docx-split{display:flex;justify-content:space-between;gap:1em}</style></head><body>' + html +
       '<script>window.onload=function(){window.print();}<\/script></body></html>'
     );
     win.document.close();

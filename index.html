@@ -100,6 +100,14 @@
           <input type="text" id="signatory_role" placeholder="Генеральный директор" value="Генеральный директор">
         </label>
       </div>
+      <label class="field">
+        <span class="field__label">Действующий на основании <em>(подставляется автоматически, можно изменить)</em></span>
+        <select id="signatory_basis">
+          <option value="Устава">Устава</option>
+          <option value="доверенности">Доверенности</option>
+          <option value="">Не указывать — для ИП</option>
+        </select>
+      </label>
       <div class="declension-preview" id="declPreview" hidden>
         <div class="declension-preview__row">
           <span class="declension-preview__k">в лице</span>

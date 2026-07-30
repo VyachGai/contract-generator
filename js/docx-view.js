@@ -110,6 +110,17 @@
   }
 
   var ALIGN = { center: 'center', right: 'right', both: 'justify', end: 'right' };
+  var TAB = '<span class="docx-tab"></span>';
+
+  // Правая табуляция у поля страницы: в Word так делают строки вида
+  // «город Пермь ......... дата». В HTML это две половины, разведённые по краям.
+  function hasRightTab(pr) {
+    var tabs = pr && child(pr, 'tabs');
+    if (!tabs) return false;
+    return children(tabs).some(function (t) {
+      return t.localName === 'tab' && attr(t, 'val') === 'right';
+    });
+  }
 
   function paraHtml(p) {
     var html = paraParts(p).map(runHtml).join('');
@@ -118,6 +129,11 @@
     var align = jc && ALIGN[attr(jc, 'val')];
     var style = align ? ' style="text-align:' + align + '"' : '';
     if (!html.replace(/<[^>]*>/g, '').trim()) return '<p' + style + '><br></p>';
+    var at = html.indexOf(TAB);
+    if (hasRightTab(pr) && at !== -1) {
+      return '<p class="docx-split"><span>' + html.slice(0, at) + '</span><span>' +
+        html.slice(at + TAB.length).split(TAB).join('') + '</span></p>';
+    }
     return '<p' + style + '>' + html + '</p>';
   }
 
