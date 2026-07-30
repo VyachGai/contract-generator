@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Генератор договоров · Комплекс-27</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Spectral:wght@500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar__inner">
+    <div class="brand">
+      <span class="brand__mark">К·27</span>
+      <span class="brand__text">Генератор договоров</span>
+    </div>
+    <div class="topbar__hint">Данные обрабатываются только в вашем браузере и никуда не отправляются</div>
+  </div>
+</header>
+
+<main class="layout">
+  <!-- ЛЕВАЯ КОЛОНКА: настройка -->
+  <section class="panel panel--controls">
+    <div class="step">
+      <div class="step__num">1</div>
+      <div class="step__body">
+        <h2>Тип договора</h2>
+        <div class="segmented" id="contractType">
+          <button class="seg" data-type="teo">ТЭО</button>
+          <button class="seg" data-type="mixed">Смешанный</button>
+          <button class="seg" data-type="to">Поручение (ТО)</button>
+        </div>
+        <p class="step__desc" id="typeDesc">Транспортно-экспедиционное обслуживание</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step__num">2</div>
+      <div class="step__body">
+        <h2>Карточка клиента</h2>
+        <label class="dropzone" id="dropzone">
+          <input type="file" id="cardFile" accept=".docx,.doc,.txt,.pdf" hidden>
+          <span class="dropzone__icon">＋</span>
+          <span class="dropzone__label">Загрузить карточку</span>
+          <span class="dropzone__sub">.docx, .doc, .txt или .pdf — поля заполнятся автоматически</span>
+        </label>
+        <div class="parse-status" id="parseStatus" hidden></div>
+        <button class="link-btn" id="fillManual" type="button">Или заполнить вручную</button>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step__num">3</div>
+      <div class="step__body">
+        <h2>Номер и дата</h2>
+        <div class="grid grid--2">
+          <label class="field">
+            <span class="field__label">Номер договора</span>
+            <input type="text" id="doc_number" placeholder="напр. 147">
+          </label>
+          <label class="field">
+            <span class="field__label">Дата</span>
+            <input type="date" id="doc_date">
+          </label>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ПРАВАЯ КОЛОНКА: данные клиента -->
+  <section class="panel panel--form">
+    <div class="form-head">
+      <h2>Данные клиента</h2>
+      <span class="form-head__badge" id="formBadge">проверьте перед созданием</span>
+    </div>
+
+    <div class="fieldset">
+      <h3 class="fieldset__title">Организация</h3>
+      <label class="field">
+        <span class="field__label">Полное наименование <em>(в тексте договора)</em></span>
+        <input type="text" id="name_full" placeholder="Общество с ограниченной ответственностью «Ромашка»">
+      </label>
+      <label class="field">
+        <span class="field__label">Сокращённое наименование <em>(в реквизитах)</em></span>
+        <input type="text" id="name_short" placeholder="ООО «Ромашка»">
+      </label>
+    </div>
+
+    <div class="fieldset">
+      <h3 class="fieldset__title">Подписант</h3>
+      <div class="grid grid--2">
+        <label class="field">
+          <span class="field__label">ФИО в именительном падеже</span>
+          <input type="text" id="signatory_fio" placeholder="Иванов Иван Иванович">
+        </label>
+        <label class="field">
+          <span class="field__label">Должность</span>
+          <input type="text" id="signatory_role" placeholder="Генеральный директор" value="Генеральный директор">
+        </label>
+      </div>
+      <div class="declension-preview" id="declPreview" hidden>
+        <div class="declension-preview__row">
+          <span class="declension-preview__k">в лице</span>
+          <span class="declension-preview__v" id="prevGen">—</span>
+        </div>
+        <div class="declension-preview__row">
+          <span class="declension-preview__k">подпись</span>
+          <span class="declension-preview__v" id="prevSign">—</span>
+        </div>
+        <div class="declension-preview__gender" id="prevGender"></div>
+      </div>
+    </div>
+
+    <div class="fieldset">
+      <h3 class="fieldset__title">Адреса и контакты</h3>
+      <label class="field">
+        <span class="field__label">Юридический адрес</span>
+        <input type="text" id="legal_address">
+      </label>
+      <label class="field">
+        <span class="field__label">Почтовый адрес</span>
+        <input type="text" id="postal_address">
+      </label>
+      <div class="grid grid--2">
+        <label class="field">
+          <span class="field__label">Телефон</span>
+          <input type="text" id="phone">
+        </label>
+        <label class="field">
+          <span class="field__label">E-mail</span>
+          <input type="text" id="email">
+        </label>
+      </div>
+    </div>
+
+    <div class="fieldset">
+      <h3 class="fieldset__title">Реквизиты</h3>
+      <div class="grid grid--2">
+        <label class="field">
+          <span class="field__label">ИНН</span>
+          <input type="text" id="inn" inputmode="numeric">
+        </label>
+        <label class="field">
+          <span class="field__label">КПП</span>
+          <input type="text" id="kpp" inputmode="numeric">
+        </label>
+      </div>
+      <label class="field">
+        <span class="field__label">ОГРН</span>
+        <input type="text" id="ogrn" inputmode="numeric">
+      </label>
+      <label class="field">
+        <span class="field__label">Банк</span>
+        <input type="text" id="bank">
+      </label>
+      <div class="grid grid--2">
+        <label class="field">
+          <span class="field__label">Расчётный счёт</span>
+          <input type="text" id="account" inputmode="numeric">
+        </label>
+        <label class="field">
+          <span class="field__label">Корр. счёт</span>
+          <input type="text" id="corr_account" inputmode="numeric">
+        </label>
+      </div>
+      <label class="field field--narrow">
+        <span class="field__label">БИК</span>
+        <input type="text" id="bik" inputmode="numeric">
+      </label>
+    </div>
+
+    <!-- Шаг подтверждения -->
+    <div class="confirm">
+      <label class="confirm__check">
+        <input type="checkbox" id="confirmCheck">
+        <span class="confirm__box" aria-hidden="true"></span>
+        <span class="confirm__label">
+          <strong>Я проверил данные — они верны</strong>
+          <span class="confirm__hint">Поставьте галочку, чтобы увидеть предпросмотр готового договора ниже. Снимите её, чтобы вернуться к редактированию.</span>
+        </span>
+      </label>
+      <div class="confirm__error" id="confirmError" hidden></div>
+    </div>
+  </section>
+</main>
+
+<!-- Окно предпросмотра готового договора (появляется после подтверждения) -->
+<section class="preview" id="previewSection" hidden>
+  <div class="preview__inner">
+    <div class="preview__head">
+      <div>
+        <h2 class="preview__title">Предпросмотр договора</h2>
+        <p class="preview__sub" id="previewSub">Так документ будет сформирован. Проверьте и скачайте в нужном формате.</p>
+      </div>
+      <div class="preview__actions">
+        <button class="btn btn--secondary" id="btnPdf" type="button">Скачать PDF</button>
+        <button class="btn btn--primary" id="btnDocx" type="button">Скачать .docx</button>
+      </div>
+    </div>
+    <div class="preview__status" id="genStatus"></div>
+    <div class="preview__paper" id="previewPaper">
+      <div class="preview__loading">Формирую предпросмотр…</div>
+    </div>
+  </div>
+</section>
+
+<footer class="actionbar">
+  <div class="actionbar__inner">
+    <div class="actionbar__status" id="clearHint">Заполните поля, отметьте проверку — предпросмотр и скачивание появятся ниже.</div>
+    <div class="actionbar__buttons">
+      <button class="btn btn--ghost" id="btnClear" type="button">Очистить всё</button>
+    </div>
+  </div>
+</footer>
+
+<!-- Внешние библиотеки (CDN). Для офлайн-развёртывания скачайте их в /lib и поменяйте пути. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pizzip/3.1.7/pizzip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pizzip/3.1.7/pizzip-utils.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/docxtemplater/3.50.0/docxtemplater.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.8.0/mammoth.browser.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+
+<!-- Наши модули -->
+<script src="js/declension-rules.js"></script>
+<script src="js/declension.js"></script>
+<script src="js/parser.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

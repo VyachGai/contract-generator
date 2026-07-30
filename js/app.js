@@ -1,0 +1,506 @@
+/* =============================================================================
+   Генератор договоров — основная логика интерфейса.
+   Всё выполняется в браузере: чтение карточки, склонение ФИО, сборка .docx/.pdf.
+   ============================================================================= */
+(function () {
+  'use strict';
+
+  // --- Конфигурация договоров ---
+  var CONTRACTS = {
+    teo:   { file: 'templates/teo.docx',   title: 'Транспортно-экспедиционное обслуживание', mode: 'fields' },
+    mixed: { file: 'templates/mixed.docx', title: 'Смешанный договор (ТЭО + таможенное оформление)', mode: 'fields' },
+    to:    { file: 'templates/to.docx',    title: 'Договор поручения (таможенное оформление)', mode: 'block' }
+  };
+
+  var FIELD_IDS = [
+    'name_full', 'name_short', 'signatory_fio', 'signatory_role',
+    'legal_address', 'postal_address', 'phone', 'email',
+    'inn', 'kpp', 'ogrn', 'bank', 'account', 'corr_account', 'bik'
+  ];
+
+  var state = { type: 'teo' };
+  var lastRender = null; // кэш последнего отрендеренного договора (для скачивания)
+  var $ = function (id) { return document.getElementById(id); };
+
+  // ---------------------------------------------------------------------------
+  // Инициализация
+  // ---------------------------------------------------------------------------
+  document.addEventListener('DOMContentLoaded', function () {
+    initContractType();
+    initDropzone();
+    initDeclensionPreview();
+    initActions();
+    setDefaultDate();
+    // Настройка pdf.js worker
+    if (window.pdfjsLib) {
+      pdfjsLib.GlobalWorkerOptions.workerSrc =
+        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    }
+  });
+
+  function setDefaultDate() {
+    var d = new Date();
+    $('doc_date').value = d.toISOString().slice(0, 10);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Выбор типа договора
+  // ---------------------------------------------------------------------------
+  function initContractType() {
+    var seg = $('contractType');
+    var buttons = seg.querySelectorAll('.seg');
+    function activate(type) {
+      state.type = type;
+      buttons.forEach(function (b) {
+        b.classList.toggle('is-active', b.dataset.type === type);
+      });
+      $('typeDesc').textContent = CONTRACTS[type].title;
+    }
+    buttons.forEach(function (b) {
+      b.addEventListener('click', function () { activate(b.dataset.type); });
+    });
+    activate('teo');
+  }
+
+  // ---------------------------------------------------------------------------
+  // Загрузка и разбор карточки
+  // ---------------------------------------------------------------------------
+  function initDropzone() {
+    var dz = $('dropzone');
+    var input = $('cardFile');
+
+    input.addEventListener('change', function () {
+      if (input.files && input.files[0]) handleCardFile(input.files[0]);
+    });
+    ['dragover', 'dragenter'].forEach(function (ev) {
+      dz.addEventListener(ev, function (e) { e.preventDefault(); dz.classList.add('is-drag'); });
+    });
+    ['dragleave', 'drop'].forEach(function (ev) {
+      dz.addEventListener(ev, function (e) { e.preventDefault(); dz.classList.remove('is-drag'); });
+    });
+    dz.addEventListener('drop', function (e) {
+      var f = e.dataTransfer.files && e.dataTransfer.files[0];
+      if (f) handleCardFile(f);
+    });
+
+    $('fillManual').addEventListener('click', function () {
+      $('name_full').focus();
+      setStatus('Заполните поля вручную и создайте договор.', 'ok');
+    });
+  }
+
+  function setStatus(msg, kind) {
+    var el = $('parseStatus');
+    el.hidden = false;
+    el.className = 'parse-status is-' + (kind || 'ok');
+    el.textContent = msg;
+  }
+
+  function handleCardFile(file) {
+    setStatus('Читаю карточку…', 'load');
+    var name = file.name.toLowerCase();
+    var reader = new FileReader();
+
+    if (name.endsWith('.txt')) {
+      reader.onload = function () { applyParsed(reader.result, file.name); };
+      reader.readAsText(file, 'utf-8');
+    } else if (name.endsWith('.docx')) {
+      reader.onload = function () {
+        window.mammoth.extractRawText({ arrayBuffer: reader.result })
+          .then(function (res) { applyParsed(res.value, file.name); })
+          .catch(function (err) { setStatus('Не удалось прочитать .docx: ' + err.message, 'err'); });
+      };
+      reader.readAsArrayBuffer(file);
+    } else if (name.endsWith('.pdf')) {
+      reader.onload = function () { extractPdfText(reader.result, file.name); };
+      reader.readAsArrayBuffer(file);
+    } else if (name.endsWith('.doc')) {
+      setStatus('Старый формат .doc не читается в браузере. Пересохраните карточку как .docx (Файл → Сохранить как) или заполните вручную.', 'warn');
+    } else {
+      setStatus('Неподдерживаемый формат. Нужен .docx, .txt или .pdf.', 'err');
+    }
+  }
+
+  function extractPdfText(arrayBuffer, fileName) {
+    if (!window.pdfjsLib) { setStatus('PDF-модуль не загрузился.', 'err'); return; }
+    pdfjsLib.getDocument({ data: arrayBuffer }).promise.then(function (pdf) {
+      var pages = [];
+      var tasks = [];
+      for (var p = 1; p <= pdf.numPages; p++) {
+        tasks.push(pdf.getPage(p).then(function (page) {
+          return page.getTextContent().then(function (tc) {
+            return tc.items.map(function (i) { return i.str; }).join(' ');
+          });
+        }));
+      }
+      Promise.all(tasks).then(function (texts) {
+        applyParsed(texts.join('\n'), fileName);
+      });
+    }).catch(function (err) {
+      setStatus('Не удалось прочитать PDF: ' + err.message, 'err');
+    });
+  }
+
+  function applyParsed(text, fileName) {
+    var data = window.CardParser.parse(text);
+    var filled = 0, total = 0;
+    var missing = [];
+    var LABELS = {
+      name_full: 'наименование', signatory_fio: 'ФИО подписанта',
+      inn: 'ИНН', kpp: 'КПП', ogrn: 'ОГРН', legal_address: 'юр. адрес',
+      account: 'р/с', bik: 'БИК', bank: 'банк'
+    };
+    FIELD_IDS.forEach(function (id) {
+      var input = $(id);
+      var val = data[id] || '';
+      total++;
+      if (val) {
+        input.value = val;
+        input.classList.add('is-autofilled');
+        filled++;
+      } else {
+        input.classList.remove('is-autofilled');
+        if (LABELS[id]) missing.push(LABELS[id]);
+      }
+    });
+    updateDeclension();
+    uncheckConfirm();
+    hidePreview();
+
+    var pct = Math.round(filled / total * 100);
+    if (missing.length === 0) {
+      setStatus('Карточка «' + fileName + '» разобрана. Все ключевые поля заполнены — проверьте и создавайте договор.', 'ok');
+    } else {
+      setStatus('Заполнено ' + filled + ' из ' + total + ' полей (' + pct + '%). Допишите вручную: ' +
+        missing.join(', ') + '. Зелёным подсвечены поля из карточки.', 'warn');
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Живой предпросмотр склонения ФИО
+  // ---------------------------------------------------------------------------
+  function initDeclensionPreview() {
+    $('signatory_fio').addEventListener('input', updateDeclension);
+  }
+
+  function updateDeclension() {
+    var fio = $('signatory_fio').value.trim();
+    var box = $('declPreview');
+    if (!fio) { box.hidden = true; return; }
+    var P = window.Petrovich;
+    var parsed = P.parseFio(fio);
+    var gender = P.detectGender(parsed.middle);
+    var gen = P.declineFullName(fio, 'genitive');
+    var sign = P.toInitials(fio);
+    box.hidden = false;
+    $('prevGen').textContent = gen;
+    $('prevSign').textContent = sign;
+    var g = gender === 'male' ? 'мужской' : gender === 'female' ? 'женский' : 'не определён (проверьте склонение)';
+    $('prevGender').textContent = 'Пол по отчеству: ' + g;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Сбор данных формы -> объект для шаблона
+  // ---------------------------------------------------------------------------
+  function collectData() {
+    var v = {};
+    FIELD_IDS.forEach(function (id) { v[id] = $(id).value.trim(); });
+    v.doc_number = $('doc_number').value.trim();
+    v.doc_date = $('doc_date').value;
+
+    var P = window.Petrovich;
+    var role = v.signatory_role || 'директора';
+    // Роль в родительном падеже для «в лице ...»
+    var roleGen = roleToGenitive(role);
+    var fioGen = v.signatory_fio ? P.declineFullName(v.signatory_fio, 'genitive') : '';
+    var fioSign = v.signatory_fio ? P.toInitials(v.signatory_fio) : '';
+
+    // Наименование: в шаблонах ТЭО и «смешанный» текст уже содержит
+    // «Общество с ограниченной ответственностью «…»», поэтому туда подставляется
+    // ТОЛЬКО бренд (без ОПФ и кавычек). В шаблоне ТО тег голый — туда идёт
+    // полное наименование целиком.
+    var brand = extractBrand(v.name_full, v.name_short);
+    var nameForTemplate = (state.type === 'to')
+      ? (v.name_full || '________________________')
+      : (brand || v.name_full || '________________________');
+
+    // Формируем значения тегов для docxtemplater
+    var tags = {
+      client_name_full: nameForTemplate,
+      client_name_short: v.name_short || v.name_full || '________',
+      client_signatory_role: roleGen,
+      client_signatory_gen: fioGen || '________________________',
+      client_signatory_sign: fioSign || '________________',
+      client_legal_address: v.legal_address,
+      client_postal_address: v.postal_address,
+      client_phone: v.phone,
+      client_email: v.email,
+      client_inn_kpp: joinInnKpp(v.inn, v.kpp),
+      client_ogrn: v.ogrn,
+      client_account: v.account,
+      client_corr_account: v.corr_account,
+      client_bik: v.bik
+    };
+
+    // Единый блок реквизитов (для договора ТО, mode: 'block')
+    tags.client_full_requisites = buildRequisitesBlock(v, fioSign);
+
+    return { v: v, tags: tags };
+  }
+
+  function joinInnKpp(inn, kpp) {
+    if (inn && kpp) return inn + '/' + kpp;
+    return inn || kpp || '';
+  }
+
+  // Извлекает «бренд» (то, что в кавычках) из наименования.
+  // «Общество с ограниченной ответственностью «Ромашка»» -> «Ромашка»
+  // «ООО «Ромашка»» -> «Ромашка».  Если кавычек нет — возвращает как есть без ОПФ.
+  function extractBrand(full, short) {
+    var src = full || short || '';
+    var m = src.match(/«([^»]+)»/) || src.match(/"([^"]+)"/);
+    if (m) return m[1];
+    // нет кавычек — уберём ведущую ОПФ
+    return src.replace(/^(Общество с ограниченной ответственностью|Публичное акционерное общество|Закрытое акционерное общество|Непубличное акционерное общество|Акционерное общество|ООО|ПАО|ЗАО|НАО|АО)\s*/i, '').trim();
+  }
+
+  function roleToGenitive(role) {
+    var r = role.trim();
+    var map = {
+      'генеральный директор': 'Генерального директора',
+      'директор': 'директора',
+      'президент': 'Президента',
+      'управляющий': 'Управляющего',
+      'индивидуальный предприниматель': 'Индивидуального предпринимателя',
+      'руководитель': 'руководителя'
+    };
+    return map[r.toLowerCase()] || r;
+  }
+
+  // Многострочный блок реквизитов для ТО (строки разделяются \n -> docxtemplater linebreak)
+  function buildRequisitesBlock(v, fioSign) {
+    var lines = [];
+    if (v.name_short || v.name_full) lines.push(v.name_short || v.name_full);
+    if (v.legal_address) lines.push('Юридический адрес: ' + v.legal_address);
+    if (v.postal_address && v.postal_address !== v.legal_address) lines.push('Почтовый адрес: ' + v.postal_address);
+    if (v.phone) lines.push('Телефон: ' + v.phone);
+    if (v.email) lines.push('E-mail: ' + v.email);
+    var innkpp = joinInnKpp(v.inn, v.kpp);
+    if (innkpp) lines.push('ИНН/КПП ' + innkpp);
+    if (v.ogrn) lines.push('ОГРН ' + v.ogrn);
+    if (v.bank) lines.push('Банк: ' + v.bank);
+    if (v.account) lines.push('Расчётный счёт ' + v.account);
+    if (v.corr_account) lines.push('Корр. счёт ' + v.corr_account);
+    if (v.bik) lines.push('БИК ' + v.bik);
+    if (fioSign) lines.push('');
+    if (fioSign) lines.push('___________________ ' + fioSign);
+    return lines.join('\n');
+  }
+
+  // ---------------------------------------------------------------------------
+  // Генерация .docx через docxtemplater
+  // ---------------------------------------------------------------------------
+  function loadTemplate(url) {
+    return new Promise(function (resolve, reject) {
+      PizZipUtils.getBinaryContent(url, function (err, content) {
+        if (err) reject(err); else resolve(content);
+      });
+    });
+  }
+
+  // Рендерит шаблон с данными -> объект docxtemplater (переиспользуется
+  // и для предпросмотра HTML, и для скачивания .docx/PDF из одного рендера)
+  function renderDoc() {
+    var cfg = CONTRACTS[state.type];
+    var collected = collectData();
+    if (!validate(collected.v)) return Promise.reject(new Error('validation'));
+
+    return loadTemplate(cfg.file).then(function (content) {
+      var zip = new PizZip(content);
+      var doc = new window.docxtemplater(zip, {
+        paragraphLoop: true,
+        linebreaks: true,
+        delimiters: { start: '{', end: '}' }
+      });
+      doc.render(collected.tags);
+      return { doc: doc, v: collected.v };
+    });
+  }
+
+  function docToBlob(doc) {
+    return doc.getZip().generate({
+      type: 'blob',
+      mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    });
+  }
+
+  function makeFileName(v, ext) {
+    var num = v.doc_number ? '_' + v.doc_number : '';
+    var client = (v.name_short || v.name_full || 'клиент')
+      .replace(/[«»"']/g, '').replace(/[^\wа-яёА-ЯЁ\-]+/g, '_').slice(0, 40);
+    var type = { teo: 'ТЭО', mixed: 'Смешанный', to: 'Поручение' }[state.type];
+    return 'Договор_' + type + num + '_' + client + '.' + ext;
+  }
+
+  function validate(v) {
+    var problems = [];
+    if (!v.name_full) problems.push('полное наименование клиента');
+    if (!v.signatory_fio) problems.push('ФИО подписанта');
+    if (problems.length) {
+      confirmError('Не хватает обязательных полей: ' + problems.join(', ') + '. Заполните и отметьте проверку снова.');
+      uncheckConfirm();
+      if (!v.name_full) $('name_full').focus();
+      else $('signatory_fio').focus();
+      return false;
+    }
+    confirmError('');
+    return true;
+  }
+
+  function genStatus(msg, kind) {
+    var el = $('genStatus');
+    if (!el) return;
+    el.className = 'preview__status' + (kind ? ' is-' + kind : '');
+    el.textContent = msg || '';
+  }
+
+  function confirmError(msg) {
+    var el = $('confirmError');
+    el.hidden = !msg;
+    el.textContent = msg || '';
+  }
+
+  // ---------------------------------------------------------------------------
+  // Кнопки действий
+  // ---------------------------------------------------------------------------
+  function initActions() {
+    // --- Галочка подтверждения → показать/скрыть предпросмотр ---
+    $('confirmCheck').addEventListener('change', function () {
+      if (this.checked) showPreview();
+      else hidePreview();
+    });
+
+    // --- Любое изменение данных сбрасывает подтверждение ---
+    var watched = FIELD_IDS.concat(['doc_number', 'doc_date']);
+    watched.forEach(function (id) {
+      var el = $(id);
+      if (el) el.addEventListener('input', onDataChanged);
+    });
+    // смена типа договора тоже сбрасывает
+    document.getElementById('contractType').addEventListener('click', onDataChanged);
+
+    // --- Скачивание (доступно только при открытом предпросмотре) ---
+    $('btnDocx').addEventListener('click', function () {
+      if (!lastRender) return;
+      genStatus('Сохраняю .docx…');
+      try {
+        var blob = docToBlob(lastRender.doc);
+        window.saveAs(blob, makeFileName(lastRender.v, 'docx'));
+        genStatus('Файл .docx сохранён', 'ok');
+      } catch (err) { genStatus('Ошибка: ' + describeError(err), 'err'); }
+    });
+
+    $('btnPdf').addEventListener('click', function () {
+      if (!lastRender) return;
+      genStatus('Готовлю PDF…');
+      var blob = docToBlob(lastRender.doc);
+      docxBlobToPdf(blob, makeFileName(lastRender.v, 'pdf')).then(function () {
+        genStatus('Окно печати PDF открыто', 'ok');
+      }).catch(function (err) {
+        genStatus('Ошибка PDF: ' + describeError(err), 'err');
+      });
+    });
+
+    $('btnClear').addEventListener('click', function () {
+      FIELD_IDS.forEach(function (id) {
+        $(id).value = (id === 'signatory_role') ? 'Генеральный директор' : '';
+        $(id).classList.remove('is-autofilled');
+      });
+      $('doc_number').value = '';
+      updateDeclension();
+      $('parseStatus').hidden = true;
+      uncheckConfirm();
+      hidePreview();
+      confirmError('');
+      $('cardFile').value = '';
+    });
+  }
+
+  // Правка данных после подтверждения → снимаем галочку, прячем предпросмотр
+  function onDataChanged() {
+    if ($('confirmCheck').checked) {
+      uncheckConfirm();
+      hidePreview();
+    }
+  }
+
+  function uncheckConfirm() {
+    $('confirmCheck').checked = false;
+  }
+
+  function hidePreview() {
+    $('previewSection').hidden = true;
+    lastRender = null;
+    genStatus('');
+  }
+
+  // Строим предпросмотр: рендерим договор и показываем как HTML
+  function showPreview() {
+    confirmError('');
+    var section = $('previewSection');
+    var paper = $('previewPaper');
+    section.hidden = false;
+    paper.innerHTML = '<div class="preview__loading">Формирую предпросмотр…</div>';
+    section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    renderDoc().then(function (rendered) {
+      lastRender = rendered;
+      var blob = docToBlob(rendered.doc);
+      $('previewSub').textContent = 'Договор: ' + CONTRACTS[state.type].title +
+        (rendered.v.doc_number ? ' · № ' + rendered.v.doc_number : '') + '. Проверьте и скачайте.';
+      return blob.arrayBuffer();
+    }).then(function (buf) {
+      return window.mammoth.convertToHtml({ arrayBuffer: buf });
+    }).then(function (res) {
+      paper.innerHTML = res.value;
+    }).catch(function (err) {
+      if (err.message === 'validation') {
+        $('previewSection').hidden = true;
+      } else {
+        paper.innerHTML = '<div class="preview__loading">Не удалось построить предпросмотр: ' +
+          describeError(err) + '</div>';
+      }
+    });
+  }
+
+  function describeError(err) {
+    if (err && err.properties && err.properties.errors) {
+      return 'проблема в шаблоне (' + err.properties.errors.length + ' тегов). Обратитесь к администратору.';
+    }
+    return (err && err.message) || 'неизвестная ошибка';
+  }
+
+  // ---------------------------------------------------------------------------
+  // PDF: конвертация .docx -> PDF на клиенте.
+  // Надёжного чистого JS-конвертера docx->pdf в браузере нет, поэтому используем
+  // печать через окно предпросмотра: открываем HTML-представление и вызываем печать
+  // в PDF. Для точного соответствия рекомендуем .docx + «Сохранить как PDF» в Word.
+  // ---------------------------------------------------------------------------
+  function docxBlobToPdf(docxBlob, pdfName) {
+    // Конвертируем docx -> HTML через mammoth, печатаем в PDF средствами браузера.
+    return docxBlob.arrayBuffer().then(function (buf) {
+      return window.mammoth.convertToHtml({ arrayBuffer: buf });
+    }).then(function (res) {
+      var win = window.open('', '_blank');
+      if (!win) throw new Error('браузер заблокировал окно печати — разрешите всплывающие окна');
+      win.document.write(
+        '<!DOCTYPE html><html lang="ru"><head><meta charset="utf-8"><title>' + pdfName + '</title>' +
+        '<style>@page{size:A4;margin:18mm 16mm}body{font-family:"Times New Roman",serif;font-size:12pt;line-height:1.35;color:#000}' +
+        'table{border-collapse:collapse;width:100%}td,th{border:1px solid #000;padding:4px 6px;vertical-align:top}' +
+        'p{margin:.3em 0}</style></head><body>' + res.value +
+        '<script>window.onload=function(){window.print();}<\/script></body></html>'
+      );
+      win.document.close();
+    });
+  }
+})();
