@@ -214,21 +214,23 @@
     var roleGen = roleToGenitive(role);
     var fioGen = v.signatory_fio ? P.declineFullName(v.signatory_fio, 'genitive') : '';
     var fioSign = v.signatory_fio ? P.toInitials(v.signatory_fio) : '';
+    var gender = v.signatory_fio ? P.detectGender(P.parseFio(v.signatory_fio).middle) : 'androgynous';
 
-    // Наименование: в шаблонах ТЭО и «смешанный» текст уже содержит
-    // «Общество с ограниченной ответственностью «…»», поэтому туда подставляется
-    // ТОЛЬКО бренд (без ОПФ и кавычек). В шаблоне ТО тег голый — туда идёт
-    // полное наименование целиком.
-    var brand = extractBrand(v.name_full, v.name_short);
-    var nameForTemplate = (state.type === 'to')
-      ? (v.name_full || '________________________')
-      : (brand || v.name_full || '________________________');
+    // Наименование целиком, с ОПФ: в шаблонах теперь голый тег, чтобы договор
+    // с клиентом-АО или ИП не начинался с зашитого «Общество с ограниченной
+    // ответственностью».
+    var isIp = /^\s*(индивидуальный предприниматель|ип\b)/i.test(v.name_full || '');
 
     // Формируем значения тегов для docxtemplater
     var tags = {
-      client_name_full: nameForTemplate,
+      client_name_full: v.name_full || '________________________',
       client_name_short: v.name_short || v.name_full || '________',
       client_signatory_role: roleGen,
+      // Род согласуется с клиентом: «ООО …, именуемое», «ИП Иванова …, именуемая»
+      client_named: isIp ? (gender === 'female' ? 'именуемая' : 'именуемый') : 'именуемое',
+      client_acting: gender === 'female' ? 'действующей' : 'действующего',
+      doc_number: v.doc_number || '____',
+      doc_date: formatDocDate(v.doc_date),
       client_signatory_gen: fioGen || '________________________',
       client_signatory_sign: fioSign || '________________',
       client_legal_address: v.legal_address,
@@ -253,28 +255,28 @@
     return inn || kpp || '';
   }
 
-  // Извлекает «бренд» (то, что в кавычках) из наименования.
-  // «Общество с ограниченной ответственностью «Ромашка»» -> «Ромашка»
-  // «ООО «Ромашка»» -> «Ромашка».  Если кавычек нет — возвращает как есть без ОПФ.
-  function extractBrand(full, short) {
-    var src = full || short || '';
-    var m = src.match(/«([^»]+)»/) || src.match(/"([^"]+)"/);
-    if (m) return m[1];
-    // нет кавычек — уберём ведущую ОПФ
-    return src.replace(/^(Общество с ограниченной ответственностью|Публичное акционерное общество|Закрытое акционерное общество|Непубличное акционерное общество|Акционерное общество|ООО|ПАО|ЗАО|НАО|АО)\s*/i, '').trim();
+  var MONTHS = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
+                'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
+
+  // '2026-07-30' -> '«30» июля 2026 г.'  Пусто -> прочерки под ручное заполнение.
+  function formatDocDate(iso) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || '');
+    if (!m) return '«__» ____________ 20__ г.';
+    return '«' + m[3] + '» ' + MONTHS[parseInt(m[2], 10) - 1] + ' ' + m[1] + ' г.';
   }
 
+  // Должность в родительный падеж: «Генеральный директор» -> «Генерального
+  // директора». Склоняем каждое слово по окончанию, регистр оператора сохраняем.
   function roleToGenitive(role) {
-    var r = role.trim();
-    var map = {
-      'генеральный директор': 'Генерального директора',
-      'директор': 'директора',
-      'президент': 'Президента',
-      'управляющий': 'Управляющего',
-      'индивидуальный предприниматель': 'Индивидуального предпринимателя',
-      'руководитель': 'руководителя'
-    };
-    return map[r.toLowerCase()] || r;
+    var r = (role || '').trim();
+    if (!r) return 'директора';
+    return r.split(/\s+/).map(function (w) {
+      if (/(ый|ой)$/.test(w)) return w.replace(/(ый|ой)$/, 'ого');
+      if (/ий$/.test(w)) return w.replace(/ий$/, /[гкхжчшщ]ий$/.test(w) ? 'ого' : 'его');
+      if (/ь$/.test(w)) return w.replace(/ь$/, 'я');
+      if (/[бвгдзклмнпрстфх]$/i.test(w)) return w + 'а';
+      return w; // уже в родительном («директора») или не склоняется («и.о.»)
+    }).join(' ');
   }
 
   // Многострочный блок реквизитов для ТО (строки разделяются \n -> docxtemplater linebreak)
@@ -303,7 +305,9 @@
   function loadTemplate(url) {
     return new Promise(function (resolve, reject) {
       PizZipUtils.getBinaryContent(url, function (err, content) {
-        if (err) reject(err); else resolve(content);
+        if (err) reject(new Error('не удалось загрузить шаблон «' + url +
+          '». Проверьте, что файл лежит в папке templates/ и сайт открыт через веб-сервер, а не двойным кликом.'));
+        else resolve(content);
       });
     });
   }
@@ -417,6 +421,7 @@
         $(id).classList.remove('is-autofilled');
       });
       $('doc_number').value = '';
+      setDefaultDate();
       updateDeclension();
       $('parseStatus').hidden = true;
       uncheckConfirm();
