@@ -101,7 +101,10 @@
     var parts = [];
     children(p).forEach(function (c) {
       if (c.localName === 'r') parts.push(c);
-      else if (c.localName === 'hyperlink' || c.localName === 'smartTag' || c.localName === 'sdt') {
+      // fldSimple — поле Word (например NUMPAGES); внутри лежит последнее
+      // вычисленное значение, его и показываем
+      else if (c.localName === 'hyperlink' || c.localName === 'smartTag' ||
+               c.localName === 'sdt' || c.localName === 'fldSimple') {
         var inner = c.getElementsByTagNameNS(W, 'r');
         for (var i = 0; i < inner.length; i++) parts.push(inner[i]);
       }

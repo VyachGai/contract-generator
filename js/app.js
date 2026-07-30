@@ -186,9 +186,17 @@
   // ---------------------------------------------------------------------------
   function initDeclensionPreview() {
     $('signatory_fio').addEventListener('input', updateDeclension);
-    $('signatory_basis').addEventListener('change', function () { basisTouched = true; });
+    $('signatory_basis').addEventListener('change', function () {
+      basisTouched = true;
+      togglePoaFields();
+    });
     $('signatory_role').addEventListener('input', suggestBasis);
     $('name_full').addEventListener('input', suggestBasis);
+  }
+
+  // Поля доверенности нужны только когда основанием выбрана доверенность
+  function togglePoaFields() {
+    $('poaFields').hidden = $('signatory_basis').value !== 'доверенности';
   }
 
   function isIndividual() {
@@ -205,6 +213,7 @@
     var role = $('signatory_role').value.trim();
     $('signatory_basis').value = isIndividual() ? ''
       : (/^(генеральный\s+)?директор$/i.test(role) ? 'Устава' : 'доверенности');
+    togglePoaFields();
   }
 
   function updateDeclension() {
@@ -232,6 +241,8 @@
     v.doc_number = $('doc_number').value.trim();
     v.doc_date = $('doc_date').value;
     v.signatory_basis = $('signatory_basis').value;
+    v.poa_number = $('poa_number').value.trim();
+    v.poa_date = $('poa_date').value;
 
     var P = window.Petrovich;
     var role = v.signatory_role || 'директора';
@@ -254,12 +265,10 @@
       // Род согласуется с клиентом: «ООО …, именуемое», «ИП Иванова …, именуемая»
       client_named: isIp ? (gender === 'female' ? 'именуемая' : 'именуемый') : 'именуемое',
       client_acting: gender === 'female' ? 'действующей' : 'действующего',
-      // Готовый оборот с ведущей запятой: «, действующего на основании Устава».
+      // Готовый оборот с ведущей запятой: «, действующего на основании Устава»
+      // или «…доверенности № 3 от 03.12.2025 г.».
       // Если основание не выбрано (ИП), оборот из договора исчезает целиком.
-      client_basis: v.signatory_basis
-        ? ', ' + (gender === 'female' ? 'действующей' : 'действующего') +
-          ' на основании ' + v.signatory_basis
-        : '',
+      client_basis: buildBasis(v, gender),
       doc_number: v.doc_number || '____',
       doc_date: formatDocDate(v.doc_date),
       client_signatory_gen: fioGen || '________________________',
@@ -296,6 +305,25 @@
     return '«' + m[3] + '» ' + MONTHS[parseInt(m[2], 10) - 1] + ' ' + m[1] + ' г.';
   }
 
+  // '2025-12-03' -> '03.12.2025 г.'
+  function formatShortDate(iso) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || '');
+    return m ? m[3] + '.' + m[2] + '.' + m[1] + ' г.' : '';
+  }
+
+  // «, действующего на основании Устава» / «…доверенности № 3 от 03.12.2025 г.»
+  function buildBasis(v, gender) {
+    if (!v.signatory_basis) return '';
+    var s = ', ' + (gender === 'female' ? 'действующей' : 'действующего') +
+      ' на основании ' + v.signatory_basis;
+    if (v.signatory_basis === 'доверенности') {
+      if (v.poa_number) s += ' № ' + v.poa_number;
+      var d = formatShortDate(v.poa_date);
+      if (d) s += ' от ' + d;
+    }
+    return s;
+  }
+
   // Должность в родительный падеж: «Генеральный директор» -> «Генерального
   // директора». Склоняем каждое слово по окончанию, регистр оператора сохраняем.
   function roleToGenitive(role) {
@@ -310,10 +338,11 @@
     }).join(' ');
   }
 
-  // Многострочный блок реквизитов для ТО (строки разделяются \n -> docxtemplater linebreak)
+  // Многострочный блок реквизитов для ТО (строки разделяются \n -> docxtemplater linebreak).
+  // Наименование клиента и строка подписи стоят в самом шаблоне — отдельными
+  // ячейками таблицы, чтобы они были на одном уровне с реквизитами Исполнителя.
   function buildRequisitesBlock(v, fioSign) {
     var lines = [];
-    if (v.name_short || v.name_full) lines.push(v.name_short || v.name_full);
     if (v.legal_address) lines.push('Юридический адрес: ' + v.legal_address);
     if (v.postal_address && v.postal_address !== v.legal_address) lines.push('Почтовый адрес: ' + v.postal_address);
     if (v.phone) lines.push('Телефон: ' + v.phone);
@@ -325,8 +354,6 @@
     if (v.account) lines.push('Расчётный счёт ' + v.account);
     if (v.corr_account) lines.push('Корр. счёт ' + v.corr_account);
     if (v.bik) lines.push('БИК ' + v.bik);
-    if (fioSign) lines.push('');
-    if (fioSign) lines.push('___________________ ' + fioSign);
     return lines.join('\n');
   }
 
@@ -422,6 +449,9 @@
       if (el) el.addEventListener('input', onDataChanged);
     });
     $('signatory_basis').addEventListener('change', onDataChanged);
+    ['poa_number', 'poa_date'].forEach(function (id) {
+      $(id).addEventListener('input', onDataChanged);
+    });
     // смена типа договора тоже сбрасывает
     document.getElementById('contractType').addEventListener('click', onDataChanged);
 
@@ -454,6 +484,8 @@
         $(id).classList.remove('is-autofilled');
       });
       $('doc_number').value = '';
+      $('poa_number').value = '';
+      $('poa_date').value = '';
       setDefaultDate();
       basisTouched = false;
       suggestBasis();
