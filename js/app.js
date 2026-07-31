@@ -7,9 +7,9 @@
 
   // --- Конфигурация договоров ---
   var CONTRACTS = {
-    teo:   { file: 'templates/teo.docx',   title: 'Транспортно-экспедиционное обслуживание', mode: 'fields' },
-    mixed: { file: 'templates/mixed.docx', title: 'Смешанный договор (ТЭО + таможенное оформление)', mode: 'fields' },
-    to:    { file: 'templates/to.docx',    title: 'Договор поручения (таможенное оформление)', mode: 'block' }
+    teo:   { file: 'templates/teo.docx',   title: 'Транспортно-экспедиционное обслуживание' },
+    mixed: { file: 'templates/mixed.docx', title: 'Смешанный договор (ТЭО + таможенное оформление)' },
+    to:    { file: 'templates/to.docx',    title: 'Договор поручения (таможенное оформление)' }
   };
 
   var FIELD_IDS = [
@@ -284,8 +284,13 @@
       client_bik: v.bik
     };
 
-    // Единый блок реквизитов (для договора ТО, mode: 'block')
-    tags.client_full_requisites = buildRequisitesBlock(v, fioSign);
+    // Реквизиты клиента: в шаблонах это цикл
+    // {#client_requisites}{line}{/client_requisites} — по абзацу на строку,
+    // незаполненные поля строк не создают. client_full_requisites — та же
+    // выжимка одним абзацем, на случай если в шаблоне остался старый тег.
+    var lines = buildRequisiteLines(v);
+    tags.client_requisites = lines.map(function (line) { return { line: line }; });
+    tags.client_full_requisites = lines.join('\n');
 
     return { v: v, tags: tags };
   }
@@ -338,23 +343,26 @@
     }).join(' ');
   }
 
-  // Многострочный блок реквизитов для ТО (строки разделяются \n -> docxtemplater linebreak).
+  // Строки реквизитов клиента — по одной на заполненное поле.
+  // Пустое поле строки не даёт вовсе: в договоре не должно быть «Телефон:»
+  // без номера, если в карточке телефона нет. Формулировки и порядок — как
+  // в колонке Исполнителя в шаблонах, чтобы столбцы читались одинаково.
   // Наименование клиента и строка подписи стоят в самом шаблоне — отдельными
   // ячейками таблицы, чтобы они были на одном уровне с реквизитами Исполнителя.
-  function buildRequisitesBlock(v, fioSign) {
+  function buildRequisiteLines(v) {
     var lines = [];
-    if (v.legal_address) lines.push('Юридический адрес: ' + v.legal_address);
+    function add(label, value) { if (value) lines.push(label + value); }
+    add('Юридический адрес: ', v.legal_address);
     if (v.postal_address && v.postal_address !== v.legal_address) lines.push('Почтовый адрес: ' + v.postal_address);
-    if (v.phone) lines.push('Телефон: ' + v.phone);
-    if (v.email) lines.push('E-mail: ' + v.email);
-    var innkpp = joinInnKpp(v.inn, v.kpp);
-    if (innkpp) lines.push('ИНН/КПП ' + innkpp);
-    if (v.ogrn) lines.push('ОГРН ' + v.ogrn);
-    if (v.bank) lines.push('Банк: ' + v.bank);
-    if (v.account) lines.push('Расчётный счёт ' + v.account);
-    if (v.corr_account) lines.push('Корр. счёт ' + v.corr_account);
-    if (v.bik) lines.push('БИК ' + v.bik);
-    return lines.join('\n');
+    add('Телефон: ', v.phone);
+    add('E-mail: ', v.email);
+    add('ИНН/КПП ', joinInnKpp(v.inn, v.kpp));
+    add('ОГРН ', v.ogrn);
+    add('Банк: ', v.bank);
+    add('Расчетный счет: ', v.account);
+    add('Корреспондентский счет: ', v.corr_account);
+    add('БИК банка ', v.bik);
+    return lines;
   }
 
   // ---------------------------------------------------------------------------
