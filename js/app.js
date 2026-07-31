@@ -400,6 +400,8 @@
   function docToBlob(doc) {
     return doc.getZip().generate({
       type: 'blob',
+      // без DEFLATE файл сохраняется без сжатия и весит впятеро больше шаблона
+      compression: 'DEFLATE',
       mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
     });
   }
