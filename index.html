@@ -16,10 +16,15 @@
       <span class="brand__mark">К·27</span>
       <span class="brand__text">Генератор договоров</span>
     </div>
+    <nav class="tabs" id="tabs">
+      <button type="button" class="tab is-active" data-view="generator">Генератор договоров</button>
+      <button type="button" class="tab" data-view="registry">Реестр договоров</button>
+    </nav>
     <div class="topbar__hint">Данные обрабатываются только в вашем браузере и никуда не отправляются</div>
   </div>
 </header>
 
+<div id="viewGenerator">
 <main class="layout">
   <!-- ЛЕВАЯ КОЛОНКА: настройка -->
   <section class="panel panel--controls">
@@ -232,6 +237,49 @@
     </div>
   </div>
 </footer>
+</div><!-- /viewGenerator -->
+
+<!-- ===================== РЕЕСТР ДОГОВОРОВ ===================== -->
+<div id="viewRegistry" hidden>
+  <section class="registry">
+    <div class="reg-picker" id="regButtons"><!-- кнопки реестров рисует registry.js --></div>
+
+    <div class="reg-panel">
+      <div class="reg-toolbar">
+        <h2 class="reg-title" id="regTitle">Реестр</h2>
+        <input type="search" class="reg-search" id="regSearch" placeholder="Поиск: организация, номер, сейлз…">
+        <select class="reg-year" id="regYear"><option value="">Все годы</option></select>
+        <div class="reg-toolbar__spacer"></div>
+        <button class="btn btn--ghost" id="regReset" type="button" hidden>Сбросить мои правки</button>
+        <button class="btn btn--secondary" id="regExport" type="button">Скачать .xlsx</button>
+        <button class="btn btn--primary" id="regAdd" type="button">＋ Добавить договор</button>
+      </div>
+      <div class="reg-status" id="regStatus">Загружаю реестр…</div>
+      <div class="reg-scroll">
+        <table class="reg-table" id="regTable"></table>
+      </div>
+      <p class="reg-foot">
+        Строка открывается по клику — там же её можно поправить или удалить. Правки
+        хранятся только в этом браузере; чтобы они попали к остальным, скачайте .xlsx
+        и положите его в общую папку взамен старого.
+      </p>
+    </div>
+  </section>
+</div>
+
+<!-- Окно правки строки реестра -->
+<div class="reg-dialog" id="regDialog" hidden>
+  <div class="reg-dialog__box" role="dialog" aria-modal="true">
+    <h3 class="reg-dialog__title" id="regDlgTitle">Договор</h3>
+    <div class="reg-dialog__body" id="regDlgBody"></div>
+    <div class="reg-dialog__actions">
+      <button class="btn btn--ghost reg-dialog__del" id="regDlgDelete" type="button">Удалить строку</button>
+      <div class="reg-toolbar__spacer"></div>
+      <button class="btn btn--ghost" id="regDlgCancel" type="button">Отмена</button>
+      <button class="btn btn--primary" id="regDlgSave" type="button">Сохранить</button>
+    </div>
+  </div>
+</div>
 
 <!-- Библиотеки лежат рядом, в /lib: приложение не зависит от внешних сайтов
      и работает без интернета. Версии: pizzip 3.1.7, docxtemplater 3.50.0,
@@ -248,5 +296,7 @@
 <script src="js/declension.js"></script>
 <script src="js/parser.js"></script>
 <script src="js/app.js"></script>
+<script src="js/xlsx-write.js"></script>
+<script src="js/registry.js"></script>
 </body>
 </html>

@@ -397,7 +397,150 @@ body {
 .btn--ghost { background: transparent; color: var(--ink-soft); border-color: var(--line-strong); }
 .btn--ghost:hover:not(:disabled) { background: var(--surface-2); color: var(--ink); }
 
+/* ==========================================================================
+   Реестр договоров
+   ========================================================================== */
+
+/* ---- Вкладки в шапке ---- */
+.tabs { display: flex; gap: 4px; background: rgba(255,255,255,.08); padding: 3px; border-radius: var(--radius-sm); }
+.tab {
+  font-family: inherit; font-size: 13px; font-weight: 600;
+  padding: 7px 16px; border: none; border-radius: 5px;
+  background: transparent; color: #b9c3d1; cursor: pointer;
+  transition: background .12s, color .12s;
+}
+.tab:hover { color: #fff; }
+.tab.is-active { background: var(--accent); color: #fff; }
+
+body.is-registry { padding-bottom: 24px; }
+body.is-modal { overflow: hidden; }
+
+.registry { max-width: 1640px; margin: 24px auto; padding: 0 24px; }
+
+/* ---- Кнопки выбора реестра ---- */
+.reg-picker {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 10px;
+  margin-bottom: 18px;
+}
+.reg-btn {
+  display: flex; align-items: center; gap: 10px;
+  font-family: inherit; font-size: 13.5px; font-weight: 600; text-align: left;
+  padding: 12px 14px;
+  background: var(--surface); color: var(--ink);
+  border: 1px solid var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow); cursor: pointer;
+  transition: border-color .12s, background .12s;
+}
+.reg-btn:hover { border-color: var(--accent); }
+.reg-btn.is-active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.reg-btn__num {
+  flex: none; width: 24px; height: 24px; border-radius: 50%;
+  display: grid; place-items: center;
+  background: var(--accent-bg); color: var(--accent-ink);
+  font-size: 12.5px; font-weight: 700;
+}
+.reg-btn.is-active .reg-btn__num { background: rgba(255,255,255,.22); color: #fff; }
+.reg-btn__name { flex: 1; min-width: 0; }
+.reg-btn__count { font-size: 12px; font-weight: 500; color: var(--ink-faint); }
+.reg-btn.is-active .reg-btn__count { color: #d3e4f0; }
+
+/* ---- Панель с таблицей ---- */
+.reg-panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.reg-toolbar {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--line);
+}
+.reg-toolbar__spacer { flex: 1; }
+.reg-title { font-size: 15px; margin: 0 8px 0 0; font-weight: 600; }
+.reg-search, .reg-year {
+  font-family: inherit; font-size: 13.5px; color: var(--ink);
+  padding: 9px 12px;
+  border: 1px solid var(--line-strong); border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+.reg-search { width: 320px; max-width: 100%; }
+.reg-search:focus, .reg-year:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-bg); }
+.reg-year { cursor: pointer; }
+.reg-status { padding: 8px 18px; font-size: 12.5px; color: var(--ink-soft); background: var(--surface-2); border-bottom: 1px solid var(--line); }
+.reg-status.is-error { color: #b02525; background: #fdf1f1; }
+.reg-foot { margin: 0; padding: 12px 18px; font-size: 12.5px; color: var(--ink-faint); border-top: 1px solid var(--line); }
+
+/* ---- Таблица ---- */
+.reg-scroll { overflow: auto; max-height: calc(100vh - 300px); }
+.reg-table { border-collapse: separate; border-spacing: 0; width: 100%; font-size: 12.5px; }
+.reg-th {
+  position: sticky; top: 0; z-index: 2;
+  background: var(--surface-2);
+  text-align: left; font-weight: 600; white-space: nowrap;
+  padding: 10px 10px; border-bottom: 1px solid var(--line-strong);
+  cursor: pointer; user-select: none;
+}
+.reg-th:hover { color: var(--accent); }
+.reg-th.is-sorted { color: var(--accent-ink); background: var(--accent-bg); }
+.reg-th--num { width: 46px; min-width: 46px; cursor: default; color: var(--ink-faint); }
+.reg-td {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+.reg-td--num { color: var(--ink-faint); text-align: right; font-variant-numeric: tabular-nums; }
+.reg-td--date { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.reg-td--sign { white-space: nowrap; }
+.reg-td--sign.is-signed { color: var(--ok); font-weight: 500; }
+.reg-row { cursor: pointer; }
+.reg-row:hover > .reg-td { background: var(--accent-bg); }
+.reg-row.is-added > .reg-td { background: var(--ok-bg); }
+.reg-row.is-edited > .reg-td { background: var(--warn-bg); }
+.reg-row.is-added:hover > .reg-td, .reg-row.is-edited:hover > .reg-td { background: var(--accent-bg); }
+.reg-band > td {
+  padding: 10px 10px 6px;
+  font-family: var(--display); font-size: 15px; font-weight: 600;
+  color: var(--ink-soft); background: var(--surface);
+  border-bottom: 2px solid var(--line-strong);
+}
+.reg-empty { padding: 28px 12px; text-align: center; color: var(--ink-faint); }
+
+/* ---- Окно правки строки ---- */
+.reg-dialog {
+  position: fixed; inset: 0; z-index: 40;
+  background: rgba(27,36,48,.45);
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: 40px 16px; overflow: auto;
+}
+.reg-dialog[hidden] { display: none; }
+.reg-dialog__box {
+  background: var(--surface); border-radius: var(--radius);
+  width: 100%; max-width: 560px;
+  box-shadow: 0 12px 48px rgba(27,36,48,.25);
+}
+.reg-dialog__title { margin: 0; padding: 18px 22px; font-size: 15px; border-bottom: 1px solid var(--line); }
+.reg-dialog__body { padding: 18px 22px; }
+.reg-dialog__body .field input {
+  width: 100%; font-family: inherit; font-size: 13.5px; color: var(--ink);
+  padding: 9px 11px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+.reg-dialog__body .field input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-bg); }
+.reg-dialog__actions {
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px 22px; border-top: 1px solid var(--line); background: var(--surface-2);
+}
+.reg-dialog__del { color: #b02525; border-color: #e6c4c4; }
+.reg-dialog__del:hover:not(:disabled) { background: #fdf1f1; color: #8f1d1d; }
+
 /* ---- Responsive ---- */
+@media (max-width: 1200px) {
+  .reg-picker { grid-template-columns: repeat(3, 1fr); }
+}
 @media (max-width: 900px) {
   .layout { grid-template-columns: 1fr; }
   .panel--controls { position: static; }
@@ -405,6 +548,11 @@ body {
   .actionbar__inner { flex-direction: column; align-items: stretch; }
   .actionbar__buttons { justify-content: stretch; }
   .actionbar__buttons .btn { flex: 1; }
+  .topbar__inner { flex-wrap: wrap; }
+  .reg-picker { grid-template-columns: repeat(2, 1fr); }
+  .registry { padding: 0 12px; }
+  .reg-search { width: 100%; }
+  .reg-scroll { max-height: none; }
 }
 
 /* доступность: видимый фокус на клавиатуре */
