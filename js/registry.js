@@ -21,6 +21,11 @@
 
   var $ = function (id) { return document.getElementById(id); };
 
+  // Снимок нужен генератору договоров ещё до открытия вкладки — из него берётся
+  // очередной номер и подсказки по сейлзам и составителям.
+  var readyResolve, readyReject;
+  var ready = new Promise(function (res, rej) { readyResolve = res; readyReject = rej; });
+
   // ---------------------------------------------------------------------------
   // Вкладки «Генератор» / «Реестр»
   // ---------------------------------------------------------------------------
@@ -31,6 +36,7 @@
       t.addEventListener('click', function () { showView(t.dataset.view); });
     });
     initRegistryUi();
+    load();
   });
 
   function showView(name) {
@@ -41,16 +47,27 @@
     $('viewRegistry').hidden = (name !== 'registry');
     document.body.classList.toggle('is-registry', name === 'registry');
     window.scrollTo(0, 0);
-    if (name === 'registry') load();
+    if (name === 'registry') { load(); if (book) show(); }
   }
 
   // ---------------------------------------------------------------------------
   // Загрузка снимка
   // ---------------------------------------------------------------------------
   function load() {
-    if (book || loading) return;
+    if (book || loading) return ready;
     loading = true;
     setStatus('Загружаю реестр…');
+    try {
+      fetchJson();
+    } catch (e) {   // старый браузер без fetch — генератор не должен встать
+      loading = false;
+      readyReject(e);
+      setStatus('Не удалось загрузить реестр: ' + e.message, true);
+    }
+    return ready;
+  }
+
+  function fetchJson() {
     fetch(DATA_URL)
       .then(function (r) {
         if (!r.ok) throw new Error('HTTP ' + r.status);
@@ -60,14 +77,20 @@
         book = data;
         patch = loadPatch();
         loading = false;
-        renderButtons();
-        selectRegistry(current || book.registries[0].id);
+        readyResolve(book);
+        if (!$('viewRegistry').hidden) show();
       })
       .catch(function (e) {
         loading = false;
+        readyReject(e);
         setStatus('Не удалось загрузить data/registry.json: ' + e.message +
           '. Приложение должно быть открыто через веб-сервер, а не двойным кликом по index.html.', true);
       });
+  }
+
+  function show() {
+    renderButtons();
+    selectRegistry(current || book.registries[0].id);
   }
 
   // ---------------------------------------------------------------------------
@@ -566,4 +589,77 @@
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;');
   }
+
+  // ---------------------------------------------------------------------------
+  // Связь с генератором договоров
+  // ---------------------------------------------------------------------------
+  var MAIN = 'to-teo';   // договоры из генератора идут в реестр «ТО и ТЭО»
+
+  // Следующий номер по реестру: 59-<год>/<порядковый>. Порядковый берём
+  // от наибольшего уже занятого за этот год, а не от числа строк — в реестре
+  // попадаются договоры с номерами клиента, они в нумерацию не входят.
+  function nextNumber(year) {
+    if (!book) return '';
+    var reg = registry(MAIN);
+    var prefix = '59-' + (year || new Date().getFullYear()) + '/';
+    var max = 0;
+    records(reg).forEach(function (r) {
+      var num = String(r.data.number || '');
+      if (num.indexOf(prefix) !== 0) return;
+      var n = parseInt(num.slice(prefix.length), 10);
+      if (!isNaN(n) && n > max) max = n;
+    });
+    return prefix + (max + 1);
+  }
+
+  // Значения колонки — для подсказок в полях генератора
+  function values(key, regId) {
+    if (!book) return [];
+    var seen = {};
+    records(registry(regId || MAIN)).forEach(function (r) {
+      var v = r.data[key];
+      if (v) seen[v] = 1;
+    });
+    return Object.keys(seen).sort();
+  }
+
+  // Запись только что сформированного договора: добавляем строку и открываем
+  // на ней реестр. Повторное скачивание того же договора (.docx, потом PDF)
+  // строку не дублирует — обновляет уже добавленную.
+  function addContract(row) {
+    return (book ? Promise.resolve(book) : load()).then(function () {
+      var reg = registry(MAIN);
+      var p = patchFor(reg.id);
+      var at = -1;
+      p.added.forEach(function (r, i) {
+        if (row.number && r.number === row.number) at = i;
+      });
+      if (at === -1) { p.added.push(row); at = p.added.length - 1; }
+      else { p.added[at] = row; }
+      savePatch();
+
+      // сбрасываем поиск и сортировку, иначе новая строка может не попасть в показ
+      current = reg.id;
+      view[reg.id] = { q: '', year: '', sort: null, dir: 1 };
+      showView('registry');
+      show();
+      flash('a' + at);
+      return 'a' + at;
+    });
+  }
+
+  function flash(ref) {
+    var tr = $('regTable').querySelector('tr[data-ref="' + ref + '"]');
+    if (!tr) return;
+    tr.classList.add('is-flash');
+    if (tr.scrollIntoView) tr.scrollIntoView({ block: 'center' });
+    setTimeout(function () { tr.classList.remove('is-flash'); }, 4000);
+  }
+
+  window.Registry = {
+    ready: ready,
+    nextNumber: nextNumber,
+    values: values,
+    addContract: addContract
+  };
 })();

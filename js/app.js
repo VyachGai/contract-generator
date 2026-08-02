@@ -23,6 +23,7 @@
   // по должности; после ручного выбора больше не перебиваем.
   var basisTouched = false;
   var lastRender = null; // кэш последнего отрендеренного договора (для скачивания)
+  var lastSavedNumber = null; // номер договора, уже занесённого в реестр
   var $ = function (id) { return document.getElementById(id); };
 
   // ---------------------------------------------------------------------------
@@ -33,6 +34,8 @@
     initDropzone();
     initDeclensionPreview();
     initActions();
+    initTerm();
+    initFromRegistry();
     setDefaultDate();
     // Настройка pdf.js worker
     if (window.pdfjsLib) {
@@ -43,6 +46,59 @@
   function setDefaultDate() {
     var d = new Date();
     $('doc_date').value = d.toISOString().slice(0, 10);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Срок действия: бессрочно или дата из календаря
+  // ---------------------------------------------------------------------------
+  function initTerm() {
+    $('term_kind').addEventListener('change', function () {
+      toggleTermDate();
+      onDataChanged();
+    });
+    toggleTermDate();
+  }
+
+  function toggleTermDate() {
+    var byDate = $('term_kind').value === 'date';
+    $('termDateField').hidden = !byDate;
+    if (!byDate) $('term_date').value = '';
+  }
+
+  // Как срок действия выглядит в реестре: у бессрочных договоров там стоит
+  // «нет срока» — самая частая формулировка колонки, у остальных просто дата.
+  function termForRegistry(v) {
+    if (v.term_kind === 'none') return 'нет срока';
+    return ruDate(v.term_date);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Связь с реестром: номер договора и подсказки в полях
+  // ---------------------------------------------------------------------------
+  function initFromRegistry() {
+    if (!window.Registry) return;
+    Registry.ready.then(function () {
+      fillNextNumber();
+      fillDatalist('salesList', Registry.values('sales'));
+      fillDatalist('authorList', Registry.values('author'));
+    }).catch(function () {
+      // реестр не загрузился — номер оператор впишет руками
+    });
+  }
+
+  // Номер подставляем, только пока поле пустое: клиент может поставить
+  // собственный номер, и перебивать его нельзя.
+  function fillNextNumber() {
+    if (!window.Registry || $('doc_number').value.trim()) return;
+    $('doc_number').value = Registry.nextNumber();
+  }
+
+  function fillDatalist(id, list) {
+    var dl = $(id);
+    if (!dl) return;
+    dl.innerHTML = list.map(function (v) {
+      return '<option value="' + v.replace(/"/g, '&quot;') + '"></option>';
+    }).join('');
   }
 
   // ---------------------------------------------------------------------------
@@ -169,6 +225,7 @@
     });
     updateDeclension();
     suggestBasis();
+    refreshNumberForNewClient();
     uncheckConfirm();
     hidePreview();
 
@@ -243,6 +300,10 @@
     v.signatory_basis = $('signatory_basis').value;
     v.poa_number = $('poa_number').value.trim();
     v.poa_date = $('poa_date').value;
+    v.term_kind = $('term_kind').value;
+    v.term_date = $('term_date').value;
+    v.sales = $('sales').value.trim();
+    v.author = $('author').value.trim();
 
     var P = window.Petrovich;
     var role = v.signatory_role || 'директора';
@@ -310,10 +371,16 @@
     return '«' + m[3] + '» ' + MONTHS[parseInt(m[2], 10) - 1] + ' ' + m[1] + ' г.';
   }
 
+  // '2025-12-03' -> '03.12.2025'
+  function ruDate(iso) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || '');
+    return m ? m[3] + '.' + m[2] + '.' + m[1] : '';
+  }
+
   // '2025-12-03' -> '03.12.2025 г.'
   function formatShortDate(iso) {
-    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || '');
-    return m ? m[3] + '.' + m[2] + '.' + m[1] + ' г.' : '';
+    var d = ruDate(iso);
+    return d ? d + ' г.' : '';
   }
 
   // «, действующего на основании Устава» / «…доверенности № 3 от 03.12.2025 г.»
@@ -414,15 +481,26 @@
     return 'Договор_' + type + num + '_' + client + '.' + ext;
   }
 
+  // Без любого из этих полей договор не формируется: часть попадает в текст
+  // договора, часть — в строку реестра, которая заводится после скачивания.
   function validate(v) {
-    var problems = [];
-    if (!v.name_full) problems.push('полное наименование клиента');
-    if (!v.signatory_fio) problems.push('ФИО подписанта');
-    if (problems.length) {
-      confirmError('Не хватает обязательных полей: ' + problems.join(', ') + '. Заполните и отметьте проверку снова.');
+    var checks = [
+      ['name_full', 'полное наименование клиента', !v.name_full],
+      ['signatory_fio', 'ФИО подписанта', !v.signatory_fio],
+      ['doc_number', 'номер договора', !v.doc_number],
+      ['doc_date', 'дата договора', !v.doc_date],
+      ['term_kind', 'срок действия', !v.term_kind],
+      ['term_date', 'дата, до которой действует договор', v.term_kind === 'date' && !v.term_date],
+      ['sales', 'сейлз', !v.sales],
+      ['author', 'составитель', !v.author]
+    ];
+    var missing = checks.filter(function (c) { return c[2]; });
+    if (missing.length) {
+      confirmError('Не хватает обязательных полей: ' +
+        missing.map(function (c) { return c[1]; }).join(', ') +
+        '. Заполните и отметьте проверку снова.');
       uncheckConfirm();
-      if (!v.name_full) $('name_full').focus();
-      else $('signatory_fio').focus();
+      $(missing[0][0]).focus();
       return false;
     }
     confirmError('');
@@ -453,11 +531,13 @@
     });
 
     // --- Любое изменение данных сбрасывает подтверждение ---
-    var watched = FIELD_IDS.concat(['doc_number', 'doc_date']);
+    var watched = FIELD_IDS.concat(['doc_number', 'doc_date', 'term_date', 'sales', 'author']);
     watched.forEach(function (id) {
       var el = $(id);
       if (el) el.addEventListener('input', onDataChanged);
     });
+    // взялись за нового клиента — номер должен стать следующим по реестру
+    $('name_full').addEventListener('input', refreshNumberForNewClient);
     $('signatory_basis').addEventListener('change', onDataChanged);
     ['poa_number', 'poa_date'].forEach(function (id) {
       $(id).addEventListener('input', onDataChanged);
@@ -473,6 +553,7 @@
         var blob = docToBlob(lastRender.doc);
         window.saveAs(blob, makeFileName(lastRender.v, 'docx'));
         genStatus('Файл .docx сохранён', 'ok');
+        saveToRegistry(lastRender.v);
       } catch (err) { genStatus('Ошибка: ' + describeError(err), 'err'); }
     });
 
@@ -483,6 +564,7 @@
         printAsPdf(window.DocxView.toHtml(lastRender.doc.getZip()),
           makeFileName(lastRender.v, 'pdf'));
         genStatus('Окно печати PDF открыто', 'ok');
+        saveToRegistry(lastRender.v);
       } catch (err) {
         genStatus('Ошибка PDF: ' + describeError(err), 'err');
       }
@@ -496,7 +578,13 @@
       $('doc_number').value = '';
       $('poa_number').value = '';
       $('poa_date').value = '';
+      $('term_kind').value = '';
+      $('sales').value = '';
+      $('author').value = '';
+      toggleTermDate();
       setDefaultDate();
+      lastSavedNumber = null;
+      fillNextNumber();
       basisTouched = false;
       suggestBasis();
       updateDeclension();
@@ -506,6 +594,55 @@
       confirmError('');
       $('cardFile').value = '';
     });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Запись договора в реестр
+  // ---------------------------------------------------------------------------
+  var SUBJECTS = { teo: 'ТЭО', mixed: 'Смешанный', to: 'ТО' };
+
+  // Скачали договор — заводим строку в реестре «ТО и ТЭО» и открываем её там.
+  // Повторное скачивание того же договора (сначала .docx, потом PDF) строку
+  // не дублирует.
+  function saveToRegistry(v) {
+    if (!window.Registry) return;
+    Registry.addContract({
+      date: ruDate(v.doc_date),
+      term: termForRegistry(v),
+      number: v.doc_number,
+      org: registryOrgName(v),
+      sales: v.sales,
+      subject: SUBJECTS[state.type],
+      author: v.author
+      // «Скан» и «Оригинал» оператор проставит в реестре, когда договор подпишут
+    }).then(function () {
+      lastSavedNumber = v.doc_number;
+    }).catch(function (e) {
+      // Договор скачан в любом случае — важно, чтобы оператор знал, что строки
+      // в реестре нет, и завёл её руками.
+      genStatus('Договор скачан, но в реестр не попал (' + (e && e.message || 'реестр не загрузился') +
+        '). Занесите строку в реестре вручную.', 'err');
+    });
+  }
+
+  // В реестре организации записаны как «Ромашка ООО» — ОПФ в конце и без
+  // кавычек (так у 9 из 10 строк). Приводим сокращённое наименование к этому
+  // виду; у ИП порядок слов не трогаем, там пишут по-разному.
+  function registryOrgName(v) {
+    var name = (v.name_short || v.name_full || '').trim();
+    var m = /^(ООО|АО|ЗАО|ПАО|ОАО|НАО)\s+(.+)$/i.exec(name);
+    if (!m) return name.replace(/[«»"]/g, '').trim();
+    return m[2].replace(/^[«"]|[»"]$/g, '').trim() + ' ' + m[1].toUpperCase();
+  }
+
+  // Номер занят предыдущим договором, а оператор взялся за нового клиента —
+  // подставляем следующий по реестру.
+  function refreshNumberForNewClient() {
+    if (!lastSavedNumber) return;
+    if ($('doc_number').value.trim() !== lastSavedNumber) return;
+    lastSavedNumber = null;
+    $('doc_number').value = '';
+    fillNextNumber();
   }
 
   // Правка данных после подтверждения → снимаем галочку, прячем предпросмотр

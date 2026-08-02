@@ -59,17 +59,42 @@
     <div class="step">
       <div class="step__num">3</div>
       <div class="step__body">
-        <h2>Номер и дата</h2>
+        <h2>Номер, дата и реестр</h2>
         <div class="grid grid--2">
           <label class="field">
-            <span class="field__label">Номер договора</span>
-            <input type="text" id="doc_number" placeholder="напр. 147">
+            <span class="field__label">Номер договора <em>(следующий по реестру)</em></span>
+            <input type="text" id="doc_number" placeholder="59-2026/1">
           </label>
           <label class="field">
             <span class="field__label">Дата</span>
             <input type="date" id="doc_date">
           </label>
         </div>
+        <label class="field">
+          <span class="field__label">Срок действия</span>
+          <select id="term_kind">
+            <option value="">— выберите —</option>
+            <option value="none">Бессрочно</option>
+            <option value="date">До даты — выбрать в календаре</option>
+          </select>
+        </label>
+        <label class="field" id="termDateField" hidden>
+          <span class="field__label">Срок действия до:</span>
+          <input type="date" id="term_date">
+        </label>
+        <div class="grid grid--2">
+          <label class="field">
+            <span class="field__label">Сейлз</span>
+            <input type="text" id="sales" list="salesList" autocomplete="off" placeholder="фамилия">
+            <datalist id="salesList"></datalist>
+          </label>
+          <label class="field">
+            <span class="field__label">Составитель</span>
+            <input type="text" id="author" list="authorList" autocomplete="off" placeholder="фамилия">
+            <datalist id="authorList"></datalist>
+          </label>
+        </div>
+        <p class="step__desc">После скачивания договор попадёт в реестр «ТО и ТЭО» — там его можно поправить.</p>
       </div>
     </div>
   </section>

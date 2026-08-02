@@ -501,6 +501,12 @@ body.is-modal { overflow: hidden; }
 .reg-row.is-added > .reg-td { background: var(--ok-bg); }
 .reg-row.is-edited > .reg-td { background: var(--warn-bg); }
 .reg-row.is-added:hover > .reg-td, .reg-row.is-edited:hover > .reg-td { background: var(--accent-bg); }
+/* строка, только что заведённая из генератора — чтобы её было видно сразу */
+.reg-row.is-flash > .reg-td { animation: regFlash 4s ease-out; }
+@keyframes regFlash {
+  0%, 45% { background: #ffe08a; }
+  100% { background: var(--ok-bg); }
+}
 .reg-band > td {
   padding: 10px 10px 6px;
   font-family: var(--display); font-size: 15px; font-weight: 600;
