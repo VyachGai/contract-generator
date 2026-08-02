@@ -501,6 +501,9 @@ body.is-modal { overflow: hidden; }
 .reg-row.is-added > .reg-td { background: var(--ok-bg); }
 .reg-row.is-edited > .reg-td { background: var(--warn-bg); }
 .reg-row.is-added:hover > .reg-td, .reg-row.is-edited:hover > .reg-td { background: var(--accent-bg); }
+/* строка есть в реестре, но её не было в присланном файле */
+.reg-row.is-missing > .reg-td { background: #fdecec; color: #8f1d1d; }
+.reg-row.is-missing:hover > .reg-td { background: #fbdede; }
 /* строка, только что заведённая из генератора — чтобы её было видно сразу */
 .reg-row.is-flash > .reg-td { animation: regFlash 4s ease-out; }
 @keyframes regFlash {
@@ -542,6 +545,35 @@ body.is-modal { overflow: hidden; }
 }
 .reg-dialog__del { color: #b02525; border-color: #e6c4c4; }
 .reg-dialog__del:hover:not(:disabled) { background: #fdf1f1; color: #8f1d1d; }
+
+/* ---- Обновление реестра из книги Excel ---- */
+.reg-publish {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  padding: 12px 18px;
+  background: var(--warn-bg); border-bottom: 1px solid #ecd9b4;
+}
+.reg-publish__text { flex: 1; min-width: 240px; font-size: 12.5px; color: #6d4708; }
+.reg-upd__hint { margin: 0 0 14px; font-size: 12.5px; color: var(--ink-soft); }
+.reg-upd__error {
+  margin-top: 12px; padding: 10px 12px;
+  background: #fdf1f1; border: 1px solid #e6c4c4; border-radius: var(--radius-sm);
+  font-size: 12.5px; color: #8f1d1d;
+}
+.reg-upd__warn {
+  margin-bottom: 14px; padding: 11px 13px;
+  background: var(--warn-bg); border: 1px solid #ecd9b4; border-radius: var(--radius-sm);
+  font-size: 12.5px; color: #6d4708; line-height: 1.45;
+}
+.reg-upd__table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-bottom: 14px; }
+.reg-upd__table th, .reg-upd__table td {
+  padding: 7px 8px; border-bottom: 1px solid var(--line); text-align: right;
+}
+.reg-upd__table th { color: var(--ink-soft); font-weight: 600; }
+.reg-upd__table th:first-child, .reg-upd__table td:first-child { text-align: left; }
+.reg-upd__total td { font-weight: 700; border-top: 1px solid var(--line-strong); border-bottom: none; }
+.reg-upd__add { color: var(--ok); }
+.reg-upd__miss { color: #b02525; font-weight: 600; }
+#regUpdDrop { margin-bottom: 0; }
 
 /* ---- Responsive ---- */
 @media (max-width: 1200px) {

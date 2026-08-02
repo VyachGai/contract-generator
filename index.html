@@ -276,8 +276,13 @@
         <select class="reg-year" id="regYear"><option value="">Все годы</option></select>
         <div class="reg-toolbar__spacer"></div>
         <button class="btn btn--ghost" id="regReset" type="button" hidden>Сбросить мои правки</button>
+        <button class="btn btn--ghost" id="regUpdate" type="button">🔒 Обновить реестр</button>
         <button class="btn btn--secondary" id="regExport" type="button">Скачать .xlsx</button>
         <button class="btn btn--primary" id="regAdd" type="button">＋ Добавить договор</button>
+      </div>
+      <div class="reg-publish" id="regPublish" hidden>
+        <div class="reg-publish__text" id="regPublishText"></div>
+        <button class="btn btn--primary" id="regPublishBtn" type="button">Скачать registry.json</button>
       </div>
       <div class="reg-status" id="regStatus">Загружаю реестр…</div>
       <div class="reg-scroll">
@@ -290,6 +295,50 @@
       </p>
     </div>
   </section>
+</div>
+
+<!-- Окно обновления реестра из книги Excel -->
+<div class="reg-dialog" id="regUpdDialog" hidden>
+  <div class="reg-dialog__box" role="dialog" aria-modal="true">
+    <h3 class="reg-dialog__title">Обновление реестра из файла Excel</h3>
+
+    <div class="reg-dialog__body" id="regUpdStep1">
+      <p class="reg-upd__hint">
+        Обновляет реестр для всех, кто открывает программу. Доступ по паролю.
+      </p>
+      <label class="field">
+        <span class="field__label">Пароль</span>
+        <input type="password" id="regUpdPass" autocomplete="off">
+      </label>
+      <div class="reg-upd__error" id="regUpdPassError" hidden></div>
+    </div>
+
+    <div class="reg-dialog__body" id="regUpdStep2" hidden>
+      <p class="reg-upd__hint">
+        Выберите книгу Excel <strong>той же формы, что и исходный «Реестр договоров 27.xlsx»</strong>:
+        те же листы и колонки. Из файла в реестр добавятся новые договоры.
+        Строки, которых в файле нет, останутся и будут подсвечены красным.
+      </p>
+      <label class="dropzone" id="regUpdDrop">
+        <input type="file" id="regUpdFile" accept=".xlsx" hidden>
+        <span class="dropzone__icon">＋</span>
+        <span class="dropzone__label">Выбрать файл .xlsx</span>
+        <span class="dropzone__sub">файл читается в браузере и никуда не отправляется</span>
+      </label>
+      <div class="reg-upd__error" id="regUpdFileError" hidden></div>
+    </div>
+
+    <div class="reg-dialog__body" id="regUpdStep3" hidden>
+      <div id="regUpdReport"></div>
+    </div>
+
+    <div class="reg-dialog__actions">
+      <div class="reg-toolbar__spacer"></div>
+      <button class="btn btn--ghost" id="regUpdCancel" type="button">Закрыть</button>
+      <button class="btn btn--primary" id="regUpdNext" type="button">Продолжить</button>
+      <button class="btn btn--primary" id="regUpdPublish" type="button" hidden>Скачать registry.json</button>
+    </div>
+  </div>
 </div>
 
 <!-- Окно правки строки реестра -->
@@ -322,6 +371,7 @@
 <script src="js/parser.js"></script>
 <script src="js/app.js"></script>
 <script src="js/xlsx-write.js"></script>
+<script src="js/xlsx-read.js"></script>
 <script src="js/registry.js"></script>
 </body>
 </html>

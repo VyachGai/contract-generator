@@ -11,6 +11,10 @@
 
   var DATA_URL = 'data/registry.json';
   var LS_KEY = 'k27-registry-patch-v1';
+  var LS_BOOK = 'k27-registry-book-v1';
+  // Пароль на обновление реестра. Это защита от случайного нажатия, а не от
+  // злого умысла: сайт статический, исходники открыты — кто захочет, прочитает.
+  var PASSWORD = 'Compl27';
 
   var book = null;          // снимок из data/registry.json
   var patch = null;         // правки оператора поверх снимка
@@ -18,6 +22,7 @@
   var view = {};            // состояние таблицы по каждому реестру: поиск, год, сортировка
   var editing = null;       // запись, открытая в окне правки
   var loading = false;
+  var localBook = false;    // реестр обновлён из файла, но ещё не опубликован
 
   var $ = function (id) { return document.getElementById(id); };
 
@@ -74,10 +79,11 @@
         return r.json();
       })
       .then(function (data) {
-        book = data;
+        book = pickBook(data);
         patch = loadPatch();
         loading = false;
         readyResolve(book);
+        updatePublishBar();
         if (!$('viewRegistry').hidden) show();
       })
       .catch(function (e) {
@@ -91,6 +97,33 @@
   function show() {
     renderButtons();
     selectRegistry(current || book.registries[0].id);
+  }
+
+  // Реестр, обновлённый из файла, живёт в браузере админа до тех пор, пока
+  // registry.json не положат в репозиторий. Как только опубликованный файл
+  // догоняет локальный, локальная копия больше не нужна.
+  function pickBook(published) {
+    var local = null;
+    try { local = JSON.parse(localStorage.getItem(LS_BOOK) || 'null'); } catch (e) { local = null; }
+    if (local && local.registries && local.updatedAt &&
+        (!published.updatedAt || local.updatedAt > published.updatedAt)) {
+      localBook = true;
+      return local;
+    }
+    if (local) { try { localStorage.removeItem(LS_BOOK); } catch (e) {} }
+    return published;
+  }
+
+  function updatePublishBar() {
+    var bar = $('regPublish');
+    if (!bar) return;
+    bar.hidden = !localBook;
+    if (!localBook) return;
+    $('regPublishText').innerHTML =
+      'Реестр обновлён из файла «' + esc(book.source || 'Excel') + '» ' +
+      (book.updatedAt || '').replace('T', ' ').slice(0, 16) +
+      ' — пока только в этом браузере. Чтобы его увидели все, скачайте <b>registry.json</b> ' +
+      'и положите в папку <b>data/</b> репозитория взамен старого.';
   }
 
   // ---------------------------------------------------------------------------
@@ -332,6 +365,8 @@
     if (c.added) parts.push('добавлено ' + c.added);
     if (c.edited) parts.push('изменено ' + c.edited);
     if (c.deleted) parts.push('удалено ' + c.deleted);
+    var missing = all.filter(function (r) { return r.data._missing; }).length;
+    if (missing) parts.push('красным — нет в присланном файле: ' + missing);
     setStatus(parts.join(' · '));
     $('regReset').hidden = totalChanges() === 0;
     updateButtonCounts();
@@ -342,7 +377,8 @@
   }
 
   function dataRow(r, reg, num) {
-    var cls = 'reg-row' + (r.added ? ' is-added' : '') + (r.edited ? ' is-edited' : '');
+    var cls = 'reg-row' + (r.added ? ' is-added' : '') + (r.edited ? ' is-edited' : '') +
+      (r.data._missing ? ' is-missing' : '');
     var tds = reg.columns.map(function (c) {
       var v = r.data[c.key] || '';
       var cellCls = 'reg-td reg-td--' + c.type;
@@ -439,6 +475,14 @@
     });
 
     if (!Object.keys(row).length) { closeEditor(); return; }
+
+    // пометки вроде «нет в присланном файле» правкой не снимаются
+    var was = editing.ref ? recordByRef(reg, editing.ref) : null;
+    if (was) {
+      Object.keys(was.data).forEach(function (k) {
+        if (k.charAt(0) === '_') row[k] = was.data[k];
+      });
+    }
 
     var p = patchFor(reg.id);
     if (!editing.ref) {
@@ -566,14 +610,43 @@
     $('regAdd').addEventListener('click', function () { openEditor(null); });
     $('regExport').addEventListener('click', exportXlsx);
     $('regReset').addEventListener('click', resetPatch);
+
+    // обновление реестра из книги Excel
+    $('regUpdate').addEventListener('click', openUpdate);
+    $('regUpdNext').addEventListener('click', checkPassword);
+    $('regUpdCancel').addEventListener('click', closeUpdate);
+    $('regUpdPublish').addEventListener('click', publishJson);
+    $('regPublishBtn').addEventListener('click', publishJson);
+    $('regUpdPass').addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); checkPassword(); }
+    });
+    $('regUpdFile').addEventListener('change', function () {
+      if (this.files && this.files[0]) handleUpdateFile(this.files[0]);
+    });
+    var drop = $('regUpdDrop');
+    ['dragover', 'dragenter'].forEach(function (ev) {
+      drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.add('is-drag'); });
+    });
+    ['dragleave', 'drop'].forEach(function (ev) {
+      drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.remove('is-drag'); });
+    });
+    drop.addEventListener('drop', function (e) {
+      var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      if (f) handleUpdateFile(f);
+    });
+
     $('regDlgSave').addEventListener('click', saveEditor);
     $('regDlgCancel').addEventListener('click', closeEditor);
     $('regDlgDelete').addEventListener('click', deleteRecord);
     $('regDialog').addEventListener('click', function (e) {
       if (e.target === $('regDialog')) closeEditor();
     });
+    $('regUpdDialog').addEventListener('click', function (e) {
+      if (e.target === $('regUpdDialog')) closeUpdate();
+    });
     document.addEventListener('keydown', function (e) {
       if (e.key === 'Escape' && !$('regDialog').hidden) closeEditor();
+      if (e.key === 'Escape' && !$('regUpdDialog').hidden) closeUpdate();
       if (e.key === 'Enter' && !$('regDialog').hidden && e.target.tagName === 'INPUT') saveEditor();
     });
   }
@@ -588,6 +661,248 @@
     return String(s == null ? '' : s)
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;');
+  }
+
+  // ---------------------------------------------------------------------------
+  // Обновление реестра из присланной книги Excel
+  // ---------------------------------------------------------------------------
+
+  // Договор узнаём по номеру и организации: даты и отметки о подписании
+  // в общем файле правят, а эта пара остаётся.
+  function norm(s) {
+    return String(s == null ? '' : s).toLowerCase()
+      .replace(/[«»"'`]/g, '').replace(/\s+/g, ' ').trim();
+  }
+
+  function keyOf(row) {
+    var num = norm(row.number), org = norm(row.org);
+    return (num || org) ? num + '|' + org : '';
+  }
+
+  function countKeys(rows) {
+    var map = {};
+    rows.forEach(function (row) {
+      var k = keyOf(row);
+      if (k) map[k] = (map[k] || 0) + 1;
+    });
+    return map;
+  }
+
+  // Лист книги -> строки реестра по тем же правилам, что и исходный снимок:
+  // какая колонка Excel какому полю соответствует, записано в columns[].src
+  function readSheet(reg, sheet) {
+    var rows = [], years = [];
+    sheet.rows.forEach(function (r) {
+      if (r.r === 1) return;                       // шапка
+      var keys = Object.keys(r.cells);
+      if (!keys.length) return;
+      if (keys.length === 1 && /^(19|20)\d{2}$/.test(r.cells[keys[0]])) {
+        years.push([rows.length, r.cells[keys[0]]]);   // разделитель года
+        return;
+      }
+      var row = {};
+      reg.columns.forEach(function (c) {
+        var parts = [];
+        [].concat(c.src || []).forEach(function (s) {
+          if (r.cells[s]) parts.push(r.cells[s]);
+        });
+        if (parts.length) row[c.key] = parts.join(' · ');
+      });
+      if (Object.keys(row).length) rows.push(row);
+    });
+    return { rows: rows, years: years };
+  }
+
+  function stripFlags(row) {
+    var copy = {};
+    Object.keys(row).forEach(function (k) { if (k.charAt(0) !== '_') copy[k] = row[k]; });
+    return copy;
+  }
+
+  // Сводит текущий реестр с присланным файлом: строки файла становятся основой,
+  // а те, что есть в реестре и отсутствуют в файле, сохраняются и помечаются.
+  function mergeFromFile(parsed, fileName) {
+    var byName = {};
+    parsed.sheets.forEach(function (s) { byName[norm(s.name)] = s; });
+
+    var absent = book.registries.filter(function (reg) {
+      return !byName[norm(reg.sheet || reg.title)];
+    }).map(function (reg) { return reg.sheet || reg.title; });
+    if (absent.length) {
+      throw new Error('в книге нет листов: ' + absent.join(', ') +
+        '. Нужен файл той же формы, что и «Реестр договоров 27.xlsx».');
+    }
+
+    var now = new Date();
+    var next = {
+      source: fileName,
+      exported: now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate()),
+      updatedAt: now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate()) +
+        'T' + pad(now.getHours()) + ':' + pad(now.getMinutes()) + ':' + pad(now.getSeconds()),
+      registries: []
+    };
+    var report = [];
+
+    book.registries.forEach(function (reg) {
+      var read = readSheet(reg, byName[norm(reg.sheet || reg.title)]);
+      var current = records(reg).map(function (r) { return r.data; });
+
+      // строки реестра, которых в файле нет — оставляем и помечаем красным
+      var inFile = countKeys(read.rows);
+      var kept = [];
+      current.forEach(function (row) {
+        var k = keyOf(row);
+        if (k && inFile[k] > 0) { inFile[k]--; return; }
+        var copy = stripFlags(row);
+        copy._missing = 1;
+        kept.push(copy);
+      });
+
+      // строки файла, которых не было в реестре
+      var inReg = countKeys(current);
+      var added = 0;
+      read.rows.forEach(function (row) {
+        var k = keyOf(row);
+        if (k && inReg[k] > 0) { inReg[k]--; return; }
+        added++;
+      });
+
+      next.registries.push({
+        id: reg.id, title: reg.title, sheet: reg.sheet,
+        columns: reg.columns, years: read.years,
+        rows: read.rows.concat(kept)
+      });
+      report.push({
+        title: reg.title, was: current.length, file: read.rows.length,
+        added: added, missing: kept.length
+      });
+    });
+
+    return { book: next, report: report };
+  }
+
+  function applyUpdate(result) {
+    book = result.book;
+    patch = emptyPatch();
+    savePatch();
+    localBook = true;
+    var warn = '';
+    try {
+      localStorage.setItem(LS_BOOK, JSON.stringify(book));
+    } catch (e) {
+      warn = 'Обновлённый реестр не поместился в память браузера (' + e.message +
+        '): он показан сейчас, но пропадёт при перезагрузке страницы. Скачайте registry.json сразу.';
+    }
+    view = {};
+    show();
+    updatePublishBar();
+    return warn;
+  }
+
+  function reportHtml(result, warn) {
+    var totalAdded = 0, totalMissing = 0, totalFile = 0, totalWas = 0;
+    var rows = result.report.map(function (r) {
+      totalAdded += r.added; totalMissing += r.missing;
+      totalFile += r.file; totalWas += r.was;
+      return '<tr><td>' + esc(r.title) + '</td><td>' + r.was + '</td><td>' + r.file + '</td>' +
+        '<td class="reg-upd__add">' + (r.added ? '+' + r.added : '—') + '</td>' +
+        '<td class="' + (r.missing ? 'reg-upd__miss' : '') + '">' + (r.missing || '—') + '</td></tr>';
+    }).join('');
+
+    var html = '';
+    if (warn) html += '<div class="reg-upd__error">' + esc(warn) + '</div>';
+    if (totalMissing) {
+      html += '<div class="reg-upd__warn"><b>В файле меньше записей, чем в реестре.</b> ' +
+        'Договоров, которые есть в реестре, но отсутствуют в присланном файле: <b>' + totalMissing +
+        '</b>. Они не удалены — остались в реестре и подсвечены красным. Проверьте, не потерялись ли ' +
+        'они в общем файле.</div>';
+    }
+    html += '<table class="reg-upd__table"><thead><tr><th>Реестр</th><th>Было</th><th>В файле</th>' +
+      '<th>Новых</th><th>Нет в файле</th></tr></thead><tbody>' + rows +
+      '<tr class="reg-upd__total"><td>Итого</td><td>' + totalWas + '</td><td>' + totalFile + '</td>' +
+      '<td class="reg-upd__add">' + (totalAdded ? '+' + totalAdded : '—') + '</td>' +
+      '<td class="' + (totalMissing ? 'reg-upd__miss' : '') + '">' + (totalMissing || '—') + '</td></tr>' +
+      '</tbody></table>';
+    html += '<p class="reg-upd__hint">Реестр уже обновлён в этом браузере. Чтобы его увидели все, ' +
+      'скачайте <b>registry.json</b> и положите в папку <b>data/</b> репозитория взамен старого — ' +
+      'через пару минут GitHub Pages раздаст новый реестр всем по ссылке.</p>';
+    return html;
+  }
+
+  function publishJson() {
+    var blob = new Blob([JSON.stringify(book)], { type: 'application/json' });
+    if (window.saveAs) saveAs(blob, 'registry.json');
+    else {
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'registry.json';
+      a.click();
+    }
+  }
+
+  // --- окно обновления: пароль -> файл -> отчёт ---
+  function openUpdate() {
+    $('regUpdPass').value = '';
+    $('regUpdPassError').hidden = true;
+    $('regUpdFileError').hidden = true;
+    $('regUpdFile').value = '';
+    updStep(1);
+    $('regUpdDialog').hidden = false;
+    document.body.classList.add('is-modal');
+    $('regUpdPass').focus();
+  }
+
+  function updStep(n) {
+    $('regUpdStep1').hidden = n !== 1;
+    $('regUpdStep2').hidden = n !== 2;
+    $('regUpdStep3').hidden = n !== 3;
+    $('regUpdNext').hidden = n !== 1;
+    $('regUpdPublish').hidden = n !== 3;
+    $('regUpdCancel').textContent = n === 3 ? 'Закрыть' : 'Отмена';
+  }
+
+  function closeUpdate() {
+    $('regUpdDialog').hidden = true;
+    document.body.classList.remove('is-modal');
+  }
+
+  function checkPassword() {
+    if ($('regUpdPass').value !== PASSWORD) {
+      var e = $('regUpdPassError');
+      e.hidden = false;
+      e.textContent = 'Неверный пароль.';
+      $('regUpdPass').select();
+      return;
+    }
+    updStep(2);
+  }
+
+  function handleUpdateFile(file) {
+    var err = $('regUpdFileError');
+    err.hidden = true;
+    if (!/\.xlsx$/i.test(file.name)) {
+      err.hidden = false;
+      err.textContent = 'Нужен файл .xlsx. Старый формат .xls пересохраните в Excel как .xlsx.';
+      return;
+    }
+    var reader = new FileReader();
+    reader.onload = function () {
+      try {
+        var parsed = XlsxRead.parse(reader.result);
+        var result = mergeFromFile(parsed, file.name);
+        var warn = applyUpdate(result);
+        $('regUpdReport').innerHTML = reportHtml(result, warn);
+        updStep(3);
+      } catch (e) {
+        err.hidden = false;
+        err.textContent = 'Не удалось обновить реестр: ' + e.message;
+      }
+    };
+    reader.onerror = function () {
+      err.hidden = false;
+      err.textContent = 'Файл не читается.';
+    };
+    reader.readAsArrayBuffer(file);
   }
 
   // ---------------------------------------------------------------------------
